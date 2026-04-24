@@ -1,0 +1,23 @@
+// Milestone 1 — stateless alpha: all history is baked into m_* attributes (VectorTA).
+// Compile: oslc -I<path-to-stdosl> m1_alpha.osl  (or use OSL’s shader search path).
+
+// Custom closure registered in C++ via `register_otl_m1_closures` (same pattern as testshade).
+closure color fix_signal(float side, float quantity, float price) BUILTIN;
+
+surface m1_alpha(output closure color Cout = 0)
+{
+    float mclose = 0.0;
+    float mrsi = 0.0;
+    int okc = getattribute("m_close", mclose);
+    int okr = getattribute("m_rsi", mrsi);
+    if (!okc) {
+        mclose = 0.0;
+    }
+    if (!okr) {
+        mrsi = 0.0;
+    }
+    float side = (mrsi > 50.0) ? 1.0 : 2.0;
+    float qty = 100.0;
+    float price = mclose;
+    Cout = fix_signal(side, qty, price);
+}

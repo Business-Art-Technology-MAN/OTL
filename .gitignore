@@ -1,0 +1,12 @@
+/build/
+/build2/
+/CMakeUserPresets.json
+**/.vs/
+**/*.user
+**/_deps/
+*.opensdf
+*.sdf
+*.suo
+*.vcxproj.user
+/.cache/
+/out/
