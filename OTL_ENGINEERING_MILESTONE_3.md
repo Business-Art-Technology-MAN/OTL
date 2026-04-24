@@ -47,3 +47,51 @@ Implement a C++ class that captures every trade, every rotor rotation, and the r
 ### Step C: The Sandbox to Lab Transition
 
 Update `OTL_Sandbox` to become `OTL_Lab`. It will take a `--config` file (defining the node tree) and a `--data` directory, then run the full historical simulation.
+
+
+
+# OTL Project Specification: Phase 3.5
+
+**Phase:** The Node-Based Backtester & Visualization Hub
+
+**Goal:** Implement the "Node DAG" for strategy assembly and a visualization dashboard to interpret the `OtlAnalytics` output.
+
+## 1. The Strategy Node DAG (`OtlLab`)
+
+The current system executes a single OSL shader. The "Node" vision requires a **Directed Acyclic Graph (DAG)** where data flows from the `OtlUniverse` through processing nodes before reaching the `GaPortfolioIntegrator`.
+
+- **Node Architecture:** Define a `BaseNode` in C++ with an `evaluate()` method.
+  - **InputNode:** Pulls `m_close` or `m_volume`.
+  - **IndicatorNode:** Wraps `VectorTAService` (e.g., RSI, MACD).
+  - **ShaderNode:** Executes the OSL Alpha logic.
+  - **MixerNode:** Combines multiple 1-vector intents via Geometric Addition or Wedge-based filtering.
+- **The --config Schema:** A JSON file that defines the wiring. Claude should implement a parser that assembles the `OtlLab` execution pipeline from this file.
+
+## 2. Visualization & Econometrics Dashboard
+
+Since you have `OtlAnalytics` exporting CSV/JSONL, we need the "Lab" to show you the results.
+
+- **The Visualization Script (**`scripts/plot_lab_results.py`**):**
+  - **Equity Curve:** Cumulative PnL vs. Benchmark (e.g., SPY).
+  - **Geometric Wastage Heatmap:** Visualizes where the momentum filters are most active.
+  - **Rotational Turnover:** A chart showing the L1-norm of rebalancing over time to monitor transaction cost drag.
+  - **Asset Manifold View:** A scatter plot or heatmap of the $N$ assets based on their current weights in $\mathcal{Cl}_{N}$.
+
+## 3. Implementation Workflow: Milestone 3.5
+
+### Step A: The Node Registry (`OtlNodeSystem`)
+
+Claude will implement the C++ registry for Strategy Nodes. This allows the `OTL_Lab` to instantiate nodes by name from the `--config` file.
+
+### Step B: The Backtest Controller (`OtlLab::run()`)
+
+Modify the `OTL_Lab` entry point to:
+
+1. Load the `universe_close_matrix.csv`.
+2. Instantiate the Node DAG.
+3. Execute the bar-by-bar loop, passing state through the nodes.
+4. Commit results to `OtlAnalytics`.
+
+### Step C: The Analytics Dashboard
+
+Create the Matplotlib/Plotly dashboard to consume the M3 analytics output. This is where you see your **Geometric Efficiency** in action.

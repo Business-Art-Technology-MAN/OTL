@@ -3,7 +3,7 @@
 	url = https://github.com/Business-Art-Technology-MAN/OpenShadingLanguage.git
 [submodule "3rdparty/VectorTA"]
 	path = 3rdparty/VectorTA
-	url = https://github.com/VectorAlpha-dev/VectorTA.git
+	url = https://github.com/Business-Art-Technology-MAN/VectorTA.git
 [submodule "3rdparty/gal"]
 	path = 3rdparty/gal
 	url = https://github.com/jeremyong/gal.git
