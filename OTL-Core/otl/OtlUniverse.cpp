@@ -8,6 +8,54 @@ using otl::OtlUniverse;
 void OtlUniverse::resize(int n) {
   m_asset_count = n;
   m_per.resize(std::max(0, n));
+  m_current_portfolio.assign(static_cast<std::size_t>(std::max(0, n)), 0.0);
+  m_previous_portfolio.assign(static_cast<std::size_t>(std::max(0, n)), 0.0);
+  m_osl_prev_portfolio.assign(static_cast<std::size_t>(std::max(0, n)), 0.0);
+  sync_bivector_storage_size();
+}
+
+void OtlUniverse::sync_bivector_storage_size() {
+  int n = m_asset_count;
+  if (n < 2) {
+    m_velocity_bivector.clear();
+    return;
+  }
+  std::size_t const pairs = static_cast<std::size_t>(n * (n - 1) / 2);
+  m_velocity_bivector.assign(pairs, 0.0);
+}
+
+void OtlUniverse::begin_bar() {
+  m_osl_prev_portfolio = m_current_portfolio;
+}
+
+void OtlUniverse::commit_post_gal(std::vector<double> w) {
+  if (m_asset_count <= 0) {
+    return;
+  }
+  if (w.size() != static_cast<std::size_t>(m_asset_count)) {
+    w.assign(static_cast<std::size_t>(m_asset_count), 0.0);
+  }
+  m_previous_portfolio = m_current_portfolio;
+  m_current_portfolio  = std::move(w);
+}
+
+void OtlUniverse::clear_portfolio_state() {
+  for (double& x : m_current_portfolio) {
+    x = 0.0;
+  }
+  for (double& x : m_previous_portfolio) {
+    x = 0.0;
+  }
+  for (double& x : m_osl_prev_portfolio) {
+    x = 0.0;
+  }
+  for (double& x : m_velocity_bivector) {
+    x = 0.0;
+  }
+}
+
+void OtlUniverse::set_velocity_bivector(std::vector<double> v) {
+  m_velocity_bivector = std::move(v);
 }
 
 void OtlUniverse::set_m_attr(int asset, std::string const& key, float v) {
@@ -44,6 +92,18 @@ bool OtlUniverse::try_get_m(int asset, char const* name, bool derivatives, float
     return false;
   }
   std::string const k(name);
+  if (k == "m_prev_weight") {
+    if (static_cast<std::size_t>(asset) >= m_osl_prev_portfolio.size()) {
+      val[0] = 0.0f;
+    } else {
+      val[0] = static_cast<float>(m_osl_prev_portfolio[static_cast<std::size_t>(asset)]);
+    }
+    if (derivatives) {
+      val[1] = 0.0f;
+      val[2] = 0.0f;
+    }
+    return true;
+  }
   auto const& pa = m_per[static_cast<std::size_t>(asset)];
 
   double out = 0.0;

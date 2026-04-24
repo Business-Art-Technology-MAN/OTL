@@ -1,10 +1,7 @@
 #pragma once
 
 #include "FixSignalClosure.hpp"
-
-namespace OSL {
-struct ClosureColor;
-}
+#include <OSL/oslclosure.h>
 
 namespace otl {
 

@@ -10,3 +10,8 @@
 *.vcxproj.user
 /.cache/
 /out/
+
+# Market lab (M3) — user-generated; keep README only if desired
+/OTL_Data/*.csv
+/OTL_Data/*.parquet
+!/OTL_Data/README.md

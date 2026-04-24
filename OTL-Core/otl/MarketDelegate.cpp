@@ -17,7 +17,7 @@ MarketDelegate::MarketDelegate(OSL::TextureSystem* texsys)
 void MarketDelegate::prepare_ustring_lookups() {
   m_m_attrs.clear();
   // Keep in sync with series registered on `OtlUniverse` and shaders (m1_alpha, M2+).
-  static const char* const kDefaultM[] = {"m_close", "m_rsi", "m_sma"};
+  static const char* const kDefaultM[] = {"m_close", "m_rsi", "m_sma", "m_prev_weight"};
   for (const char* s : kDefaultM) {
     ustring u(s);
     m_m_attrs.push_back(MAttrUstr{u, OSL::ustringhash(u)});

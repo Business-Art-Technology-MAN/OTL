@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "source": { "m_attr": "m_close" },
+  "shader": {
+    "layer": "m1_alpha",
+    "m_attrs": ["m_close", "m_rsi", "m_sma", "m_rsi_sma12"]
+  },
+  "indicators": [
+    {
+      "id": "r14",
+      "indicator": "rsi",
+      "period": 14,
+      "from": "close",
+      "m_attr": "m_rsi"
+    },
+    {
+      "id": "s20",
+      "indicator": "sma",
+      "period": 20,
+      "from": "close",
+      "m_attr": "m_sma"
+    },
+    {
+      "id": "r_on_sma",
+      "indicator": "rsi",
+      "period": 12,
+      "from": "s20",
+      "m_attr": "m_rsi_sma12"
+    }
+  ]
+}

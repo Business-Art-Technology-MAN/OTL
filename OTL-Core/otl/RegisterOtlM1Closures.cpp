@@ -4,6 +4,7 @@
 #include "FixSignalClosure.hpp"
 
 using namespace OSL;
+using otl::FixSignalLayout;
 
 void register_otl_m1_closures(OSL::ShadingSystem* shadingsys) {
   if (!shadingsys) {

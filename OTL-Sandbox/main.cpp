@@ -35,6 +35,11 @@ struct Options {
   int osl_max_assets{64};
   bool print_tables{true};
   unsigned int seed{0x4f544c0Du};
+  int m2_bars{0};  // 0 = skip; >=100 runs Milestone-2 GAL+velocity loop (bivector + friction)
+  double m2_biv_lambda{0.99};
+  double m2_alpha{0.6};
+  double m2_beta{0.4};
+  double m2_cash_friction{0.0};
 };
 
 void print_vec_block(std::string const& label, std::vector<double> const& v) {
@@ -80,11 +85,22 @@ Options parse_args(int argc, char** argv) {
       o.osl_all         = true;
     } else if (a == "--no-tables") {
       o.print_tables = false;
+    } else if (a == "--m2-bars" && i + 1 < argc) {
+      o.m2_bars = std::stoi(argv[++i]);
+    } else if (a == "--m2-biv-lambda" && i + 1 < argc) {
+      o.m2_biv_lambda = std::stod(argv[++i]);
+    } else if (a == "--m2-alpha" && i + 1 < argc) {
+      o.m2_alpha = std::stod(argv[++i]);
+    } else if (a == "--m2-beta" && i + 1 < argc) {
+      o.m2_beta = std::stod(argv[++i]);
+    } else if (a == "--m2-cash" && i + 1 < argc) {
+      o.m2_cash_friction = std::stod(argv[++i]);
     } else if (a == "-h" || a == "--help") {
       std::cout
           << "OTL_Sandbox: synthetic 64-asset (default) book → VectorTA → OSL m1_alpha → GAL\n"
           << "  --assets N  --len T  --bar B  --shader-dir P  --csv out.csv  --seed S\n"
           << "  --osl-samples M   (shorter OSL; default: --osl-all for every asset when OSL on)\n"
+          << "Milestone 2:  --m2-bars T  (e.g. 150)  --m2-biv-lambda λ  --m2-alpha --m2-beta  --m2-cash\n"
           << "  env OTL_SHADER_DIR  optional if --shader-dir not set\n";
       std::exit(0);
     }
@@ -268,6 +284,58 @@ int main(int argc, char** argv) {
   } else {
     std::cout << "OSL: skipped. Set --shader-dir or OTL_SHADER_DIR (with m1_alpha.oso) for E2E.\n";
   }
+
+  // --- Milestone 2: stateful bivector velocity, momentum blend, optional cash decay (T > 100) ---
+  if (opt.m2_bars > 0) {
+    if (opt.print_tables) {
+      std::cout << "\n=== OTL-Sandbox: Milestone 2 (GAL + V_t = Ψ_t∧Ψ_{t-1}, λ bivector) ===\n";
+    }
+    universe.clear_portfolio_state();
+    double biv_l2_0   = 0.0;
+    double biv_l2_mid = 0.0;
+    double biv_l2_end = 0.0;
+    for (int t = 0; t < opt.m2_bars; ++t) {
+      int const b     = (opt.series_len > 0) ? (t % opt.series_len) : 0;
+      universe.set_bar(b);
+      universe.begin_bar();
+      std::vector<double> mom = universe.current_portfolio();
+      std::vector<double> osl(static_cast<std::size_t>(n), 0.0);
+      for (int a = 0; a < n; ++a) {
+        osl[static_cast<std::size_t>(a)] =
+            0.1 * (a == 0 ? 1.0 : 0.0) + 0.04 * std::sin(0.05 * static_cast<double>(t) + 0.3 * static_cast<double>(a));
+      }
+      std::vector<double> w =
+          otl::rebalance_m2(osl, mom, rm, i_rot, j_rot, 2.0, opt.m2_alpha, opt.m2_beta);
+      if (opt.m2_cash_friction > 0.0) {
+        otl::apply_cash_friction_1vector(w, n, opt.m2_cash_friction);
+      }
+      std::vector<double> biv = otl::wedge_1vector(w, mom);
+      otl::dampen_bivector(biv, opt.m2_biv_lambda);
+      double sL = 0.0;
+      for (double x : biv) {
+        sL += x * x;
+      }
+      sL = std::sqrt(sL);
+      if (t == 0) {
+        biv_l2_0 = sL;
+      }
+      if (t == opt.m2_bars / 2) {
+        biv_l2_mid = sL;
+      }
+      if (t == opt.m2_bars - 1) {
+        biv_l2_end = sL;
+      }
+      universe.set_velocity_bivector(std::move(biv));
+      universe.commit_post_gal(std::move(w));
+    }
+    if (opt.print_tables) {
+      std::cout << "  steps=" << opt.m2_bars << "  bivector L2: t0=" << biv_l2_0 << "  mid=" << biv_l2_mid
+                << "  end=" << biv_l2_end << "  (damped by λ=" << opt.m2_biv_lambda << " per bar)\n";
+      std::vector<double> const& fin = universe.current_portfolio();
+      std::cout << "  w[0] (final) = " << (fin.empty() ? 0.0 : fin[0]) << "  m_prev[0] after last begin would feed OSL on next bar\n";
+    }
+  }
+
   if (file.is_open()) {
     std::cout << "Wrote " << opt.csv_path << "\n";
   }

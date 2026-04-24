@@ -52,14 +52,32 @@ corrosion_import_crate(
 )
 
 # C++ side of cxx: generates bridge headers/sources and a small static library to link.
+# Paths are relative to the crate’s `src/` (Corrosion sets rust_source = MANIFEST_PATH/src/FILES).
+# Only CRATE + FILES (Corrosion 0.5.2). Extra keywords are misparsed as extra inputs under FILES.
 corrosion_add_cxxbridge(
   otl_vector_ta_cxx
   CRATE vector_ta
-  MANIFEST_PATH "${CMAKE_SOURCE_DIR}/3rdparty/VectorTA"
   FILES
-    src/bridge.rs
-  REGEN_TARGET otl_regen_cxx_vector_ta
+    bridge.rs
 )
+
+# C++ support library from the `cxx` crate (Str/Vec/Slice) — not pulled in by Corrosion 0.5.
+file(GLOB _OTL_CXX_GLOB
+  "$ENV{USERPROFILE}/.cargo/registry/src/*/cxx-1.0.*/src/cxx.cc"
+  "$ENV{CARGO_HOME}/registry/src/*/cxx-1.0.*/src/cxx.cc"
+)
+if(NOT _OTL_CXX_GLOB)
+  message(
+    FATAL_ERROR
+    "Could not find cxx-1.0.*/src/cxx.cc under cargo (build 3rdparty/VectorTA once, or set CARGO_HOME)."
+  )
+endif()
+list(GET _OTL_CXX_GLOB 0 _OTL_CXX_CC)
+get_filename_component(_OTL_CXX_SRC_DIR "${_OTL_CXX_CC}" DIRECTORY)     # .../src
+get_filename_component(_OTL_CXX_ROOT "${_OTL_CXX_SRC_DIR}" DIRECTORY)  # .../cxx-1.0.x
+add_library(otl_cxx_crate_cpp STATIC "${_OTL_CXX_ROOT}/src/cxx.cc")
+target_include_directories(otl_cxx_crate_cpp PUBLIC "${_OTL_CXX_ROOT}/include")
+target_link_libraries(otl_vector_ta_cxx PUBLIC otl_cxx_crate_cpp)
 
 # 1. GAL (header-only): point at the GAL 'include' or 'src' tree (repo-relative).
 include_directories(3rdparty/gal/include)
@@ -67,6 +85,17 @@ include_directories(3rdparty/gal/include)
 # Project naming: "VectorTA-rust" in docs = Corrosion cxx target (Rust + generated C++ from bridge.rs).
 # CMake target names must not use '-'; this alias is the link surface for the Rust/VectorTA stack.
 add_library(VectorTA_rust ALIAS otl_vector_ta_cxx)
+
+# nlohmann/json: OtlNodeSystem (M3) JSON config (must be before otl_core target_link_libraries).
+include(FetchContent)
+if(NOT TARGET nlohmann_json::nlohmann_json)
+  FetchContent_Declare(
+    nlohmann_json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG v3.11.3
+  )
+  FetchContent_MakeAvailable(nlohmann_json)
+endif()
 
 # OTL-Core static library: shared by OTL_Engine, OTL_Sandbox, and keeps link flags in one place.
 add_library(
@@ -78,9 +107,19 @@ add_library(
   OTL-Core/otl/RegisterOtlM1Closures.cpp
   OTL-Core/otl/GaPortfolioIntegrator.cpp
   OTL-Core/otl/ExtractFixSignal.cpp
+  OTL-Core/otl/OtlGeometricMetrics.cpp
+  OTL-Core/otl/OtlAnalytics.cpp
+  OTL-Core/otl/MarketDataCsv.cpp
+  OTL-Core/otl/OtlNodeSystem.cpp
 )
-target_include_directories(otl_core PUBLIC "${CMAKE_SOURCE_DIR}/OTL-Core")
-target_link_libraries(otl_core PUBLIC oslexec VectorTA_rust)
+target_include_directories(otl_core
+  PUBLIC
+    "${CMAKE_SOURCE_DIR}/OTL-Core"
+    # OSL headers (oslexec’s INTERFACE points at install dir; embedded build uses source + generated oslconfig).
+    "${CMAKE_SOURCE_DIR}/3rdparty/osl/src/include"
+    "${CMAKE_BINARY_DIR}/include"
+)
+target_link_libraries(otl_core PUBLIC oslexec VectorTA_rust nlohmann_json::nlohmann_json)
 
 # High-dimensional / SIMD + fast-math (match prior OTL_Engine settings).
 if(MSVC)
@@ -107,10 +146,21 @@ if(MSVC)
   corrosion_set_env_vars(vector_ta "CFLAGS=-MD$<$<CONFIG:Debug>:d>" "CXXFLAGS=-MD$<$<CONFIG:Debug>:d>")
 endif()
 
-# GoogleTest: from vcpkg (`vcpkg install gtest`); see OTL_ENGINEERING_TESTING_REFERENCE.md.
+# GoogleTest: prefer vcpkg; otherwise fetch (so `OtlM3Node` and friends build out of the box).
 option(OTL_BUILD_TESTS "Build otl_unit_tests (GTest: Integrator + Ga)" ON)
 if(OTL_BUILD_TESTS)
-  find_package(GTest CONFIG REQUIRED)
+  find_package(GTest CONFIG QUIET)
+  if(NOT GTest_FOUND)
+    include(FetchContent)
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+    set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(
+      googletest
+      GIT_REPOSITORY https://github.com/google/googletest.git
+      GIT_TAG v1.14.0
+    )
+    FetchContent_MakeAvailable(googletest)
+  endif()
   enable_testing()
   add_subdirectory(tests)
 endif()

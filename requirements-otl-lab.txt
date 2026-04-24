@@ -1,0 +1,7 @@
+# OTL Lab / M3 (Python data ingestor + plot_lab_results)
+yfinance>=0.2.40
+pandas>=2.0
+numpy>=1.24
+matplotlib>=3.8
+# optional:
+# pyarrow

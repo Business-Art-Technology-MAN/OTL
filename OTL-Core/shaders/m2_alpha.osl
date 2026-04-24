@@ -1,0 +1,21 @@
+// Milestone 2 — path-dependent alpha: uses m_prev_weight for trade-urgency / hysteresis.
+// oslc -I<path-to-stdosl> m2_alpha.osl  →  m2_alpha.oso  on OTL_SHADER_DIR
+
+closure color fix_signal(float side, float quantity, float price) BUILTIN;
+
+surface m2_alpha(output closure color Cout = 0)
+{
+    float mclose = 0.0, mrsi = 0.0, prevw = 0.0;
+    int okc = getattribute("m_close", mclose);
+    int okr = getattribute("m_rsi", mrsi);
+    int okp = getattribute("m_prev_weight", prevw);
+    if (!okc) mclose = 0.0;
+    if (!okr) mrsi = 50.0;
+    if (!okp) prevw = 0.0;
+    // Urgency: exit only if we think we are oversized vs last bar
+    float urgency = abs(prevw) > 0.02 ? 0.0 : 1.0;
+    float side = (mrsi > 50.0) ? 1.0 : 2.0;
+    float qty  = 100.0 * (0.5 + 0.5 * urgency);
+    float price = mclose;
+    Cout = fix_signal(side, qty, price);
+}
