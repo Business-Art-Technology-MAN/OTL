@@ -12,7 +12,6 @@ add_executable(otl_unit_tests
 target_include_directories(otl_unit_tests
   PRIVATE
   "${CMAKE_SOURCE_DIR}/OTL-Core"
-  "${CMAKE_SOURCE_DIR}/3rdparty/gal/include"
 )
 
 if(MSVC)
@@ -27,6 +26,23 @@ target_link_libraries(otl_unit_tests
 )
 
 add_test(NAME GaPortfolioUnit COMMAND otl_unit_tests)
+# Windows: gtest is built as DLL next to the test exe under bin/Release; add to PATH for ctest.
+if(WIN32)
+  if(DEFINED VCPKG_INSTALLED_DIR)
+    set(_otl_vcpkg_bin "${VCPKG_INSTALLED_DIR}/x64-windows/bin")
+  else()
+    set(_otl_vcpkg_bin "")
+  endif()
+  set(_otl_gtest_path "${CMAKE_BINARY_DIR}/bin/Release;${CMAKE_BINARY_DIR}/bin/Debug;${CMAKE_BINARY_DIR}/tests/Release;${CMAKE_BINARY_DIR}/tests/Debug")
+  if(_otl_vcpkg_bin)
+    string(APPEND _otl_gtest_path ";${_otl_vcpkg_bin}")
+  endif()
+  set_property(TEST GaPortfolioUnit
+    APPEND
+    PROPERTY
+      ENVIRONMENT
+        "PATH=${_otl_gtest_path}")
+endif()
 
 # M3: OtlNodeSystem (JSON + VectorTA); requires full otl_core link.
 add_executable(otl_m3_node_tests

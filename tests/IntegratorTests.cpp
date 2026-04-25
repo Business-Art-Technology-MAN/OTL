@@ -1,8 +1,6 @@
 // OTL Phase 1.5: GaPortfolioIntegrator — projection, Givens / rotor slice, and risk-subspace tests.
 // "Risk bivector" in the spec is represented as a span of grade-1 basis vectors in R^N (sector blades).
 
-#include <gal/vga.hpp>
-
 #include <cmath>
 #include <cstddef>
 #include <vector>
@@ -87,19 +85,15 @@ TEST(Integrator, Givens180FlipsStandardBasisInSlice) {
   }
 }
 
-TEST(Integrator, GAL_ThreeD_Orthogonality) {
+TEST(Integrator, ThreeD_Orthogonality) {
   otl::RiskModel rm;
   std::vector<double> e0 = {0.0, 0.0, 1.0};
   rm.risk_basis.push_back(e0);
   std::vector<double> v = {1.0, 2.0, 3.0};
   std::vector<double> w = otl::project_orthogonal_complement(v, rm);
-  gal::vga::vector<double> g_e(0, 0, 1);
-  gal::vga::vector<double> g_w(w[0], w[1], w[2]);
-  double gal_dot = 0.0;
-  for (std::size_t d = 0; d < 3; ++d) {
-    gal_dot += static_cast<double>(g_e[d] * g_w[d]);
-  }
-  EXPECT_NEAR(gal_dot, 0.0, 1e-12);
+  // e0 = ẑ; complement projection should be orthogonal to ẑ ⇔ w·e0 = w_z = 0
+  double const dot_ze0 = w[0] * e0[0] + w[1] * e0[1] + w[2] * e0[2];
+  EXPECT_NEAR(dot_ze0, 0.0, 1e-12);
 }
 
 TEST(Integrator, RebalanceEmptyRiskMatchesGivens) {

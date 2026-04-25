@@ -80,7 +80,8 @@ target_include_directories(otl_cxx_crate_cpp PUBLIC "${_OTL_CXX_ROOT}/include")
 target_link_libraries(otl_vector_ta_cxx PUBLIC otl_cxx_crate_cpp)
 
 # 1. GAL (header-only): point at the GAL 'include' or 'src' tree (repo-relative).
-include_directories(3rdparty/gal/include)
+# GAL ships public headers under `public/` (e.g. `public/gal/vga.hpp` → #include <gal/vga.hpp>).
+include_directories(3rdparty/gal/public)
 
 # Project naming: "VectorTA-rust" in docs = Corrosion cxx target (Rust + generated C++ from bridge.rs).
 # CMake target names must not use '-'; this alias is the link surface for the Rust/VectorTA stack.
@@ -163,6 +164,12 @@ if(OTL_BUILD_TESTS)
   endif()
   enable_testing()
   add_subdirectory(tests)
+endif()
+
+# Market Lab: headless host (Command Bridge). UI is OTL-MarketLab/electron (build separately: npm run start).
+option(OTL_BUILD_MARKET_LAB "Build otl_marketlab_host (C++; Named Pipe or UDS)" ON)
+if(OTL_BUILD_MARKET_LAB)
+  add_subdirectory(OTL-MarketLab/host)
 endif()
 
 # Help IDEs: attach folder when supported.

@@ -1,0 +1,12 @@
+# UI / local tooling (adjust as the stack is chosen)
+node_modules/
+dist/
+build/
+out/
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.local
+*.log
+.DS_Store

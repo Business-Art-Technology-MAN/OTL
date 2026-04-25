@@ -1,0 +1,18 @@
+{
+  "name": "market-lab",
+  "version": "0.1.0",
+  "description": "Market Lab (Electron) — NASA dashboard, DCC node graph, scrubbable timeline",
+  "author": "OTL Suite",
+  "main": "main.cjs",
+  "type": "commonjs",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron ."
+  },
+  "dependencies": {
+    "lightweight-charts": "^5.0.0"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0"
+  }
+}

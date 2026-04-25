@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Market Lab</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles/shell.css" />
+  </head>
+  <body class="theme-dark">
+    <header class="mlab-topbar">
+      <span class="mlab-title">Market Lab</span>
+      <span id="conn-pill" class="pill pill-idle" title="Green = OK, amber = host up with issues, red = not connected or error.">Bridge: not checked</span>
+      <button id="btn-npanel" type="button" class="btn-ghost" aria-pressed="false" title="Toggle sidebar (N)">N-Panel</button>
+      <button id="btn-load" type="button">Load CSV…</button>
+      <button id="btn-ping" type="button">Ping host</button>
+    </header>
+
+    <div class="workspace" id="workspace">
+      <section class="node-workspace" aria-label="Node editor (Blender-style)">
+        <div class="node-toolbar">
+          <span class="node-toolbar-label">Node editor</span>
+          <button type="button" id="btn-zoom-fit" class="btn-ghost" title="Reset pan / zoom">Reset view</button>
+          <span class="node-toolbar-z mono" id="zoom-pct">100%</span>
+          <span class="node-toolbar-hint">Drag nodes to arrange · drag empty area to pan · wheel zooms graph only</span>
+        </div>
+        <div class="node-board-outer" id="node-board-outer">
+          <div class="node-board-stack">
+            <div class="backdrop-stack" aria-hidden="true">
+              <div id="backdrop-chart" class="backdrop-chart"></div>
+              <div class="backdrop-dim"></div>
+              <span class="backdrop-floating-lbl">BACKDROP</span>
+            </div>
+            <svg
+            id="node-board-svg"
+            class="node-board-svg node-board-overlay"
+            viewBox="0 0 1000 480"
+            preserveAspectRatio="xMinYMin meet"
+            role="img"
+            aria-label="Node graph: market pipeline"
+          >
+            <g id="board-graph">
+              <rect
+                id="graph-pan-surface"
+                class="graph-pan-surface"
+                x="0"
+                y="0"
+                width="1000"
+                height="480"
+                fill="rgba(0,0,0,0.01)"
+              />
+              <g id="graph-wires" pointer-events="none">
+                <path
+                  id="wire-md-sig"
+                  class="connect-wire connect-stream"
+                  fill="none"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  d=""
+                />
+                <path
+                  id="wire-sig-port"
+                  class="connect-wire connect-stream"
+                  fill="none"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  d=""
+                />
+                <path
+                  id="wire-port-ana"
+                  class="connect-wire connect-float"
+                  fill="none"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  d=""
+                />
+              </g>
+
+              <g class="mlab-node" data-id="market-data" data-kind="md" transform="translate(36, 140)">
+                <rect class="node-chrome" x="0" y="0" width="200" height="120" rx="3" />
+                <rect class="node-hdr node-hdr-md" x="0" y="0" width="200" height="26" rx="3" />
+                <text x="8" y="17" class="node-hdr-text">Yahoo / CSV · Market data</text>
+                <text x="8" y="48" class="node-body-lbl">Source</text>
+                <text x="8" y="64" class="node-body-val mono" id="node-val-md-path">(no file)</text>
+                <text x="8" y="80" class="node-body-sock" font-size="7" fill="#6a7a8a">Load: N-Panel</text>
+                <text x="8" y="96" class="node-body-lbl">Stream</text>
+                <text x="8" y="112" class="node-body-sock mono">Data · OHLCV</text>
+                <circle class="socket socket-in" cx="0" cy="44" r="5" data-io="in" />
+                <circle class="socket socket-out socket-stream" cx="200" cy="100" r="5" data-io="out" />
+                <text x="188" y="92" class="socket-tag mono" text-anchor="end">out</text>
+              </g>
+
+              <g class="mlab-node" data-id="signal-otl" data-kind="sig" transform="translate(300, 120)">
+                <rect class="node-chrome" x="0" y="0" width="220" height="120" rx="3" />
+                <rect class="node-hdr node-hdr-sig" x="0" y="0" width="220" height="26" rx="3" />
+                <text x="8" y="17" class="node-hdr-text">Uber · VectorTA</text>
+                <text x="8" y="44" class="node-body-lbl" font-size="9">Properties: N-Panel (select node)</text>
+                <text x="8" y="60" class="node-body-val mono" font-size="9" id="uber-out-hint">m_*</text>
+                <text x="8" y="90" class="node-body-sock mono" font-size="8">SET_UBER_SIGNAL</text>
+                <circle class="socket socket-in socket-stream" cx="0" cy="100" r="5" data-io="in" />
+                <circle class="socket socket-out socket-float" cx="220" cy="100" r="5" data-io="out" />
+                <text x="210" y="92" class="socket-tag mono" font-size="8" text-anchor="end">out</text>
+              </g>
+
+              <g class="mlab-node" data-id="portfolio-mix" data-kind="port" transform="translate(600, 140)">
+                <rect class="node-chrome" x="0" y="0" width="200" height="100" rx="3" />
+                <rect class="node-hdr node-hdr-port" x="0" y="0" width="200" height="26" rx="3" />
+                <text x="8" y="17" class="node-hdr-text">Portfolio mix</text>
+                <text x="8" y="48" class="node-body-lbl">Composition</text>
+                <text x="8" y="66" class="node-body-val mono">equal-weight (stub)</text>
+                <text x="8" y="90" class="node-body-sock mono">3× signal in (future)</text>
+                <circle class="socket socket-in" cx="0" cy="100" r="5" data-io="in" />
+                <circle class="socket socket-out socket-cyan" cx="200" cy="100" r="5" data-io="out" />
+              </g>
+
+              <g class="mlab-node" data-id="analysis-metrics" data-kind="ana" transform="translate(860, 120)">
+                <rect class="node-chrome" x="0" y="0" width="200" height="120" rx="3" />
+                <rect class="node-hdr node-hdr-ana" x="0" y="0" width="200" height="26" rx="3" />
+                <text x="8" y="17" class="node-hdr-text">Metric table</text>
+                <text x="8" y="48" class="node-body-lbl">Analysis (viewer)</text>
+                <text x="8" y="66" class="node-body-val mono">Sharpe, Sortino, CAGR</text>
+                <text x="8" y="90" class="node-body-sock mono">Fills N-Panel + backdrop</text>
+                <circle class="socket socket-in" cx="0" cy="100" r="5" data-io="in" />
+                <text x="8" y="110" class="node-body-sock" fill="#6a6a6a">(host metrics later)</text>
+              </g>
+            </g>
+          </svg>
+          </div>
+        </div>
+        <p class="hint workbench-hint">Blender-style headers: <strong>green</strong> data, <strong>blue</strong> signal, <strong>gold</strong> portfolio, <strong>purple</strong> analysis. <strong>Load CSV</strong> and <strong>Ping host</strong> are in the top bar; with the <strong>Market data</strong> node selected, the same file control appears in the N-Panel. <kbd>N</kbd> toggles the sidebar.</p>
+      </section>
+
+      <aside class="npanel" id="n-panel" aria-label="N-Panel: properties and telemetry">
+        <h2 class="npanel-h">Properties &amp; telemetry</h2>
+        <div class="npanel-section">
+          <h3 class="npanel-sh">Item <span class="npanel-sublab">(selected node)</span></h3>
+          <div id="npanel-item-body" class="npanel-box"></div>
+        </div>
+        <div class="npanel-section">
+          <h3 class="npanel-sh">Timeline <span class="npanel-sublab">(seek)</span></h3>
+          <div class="npanel-box npanel-seek">
+            <div class="time-controls" role="group" aria-label="Seek bar index or date">
+              <label class="npanel-seek-lab" for="seek-input">Seek</label>
+              <input
+                id="seek-input"
+                type="text"
+                placeholder="index, YYYY-MM-DD, or label"
+                size="28"
+                autocomplete="off"
+              />
+              <button id="btn-seek" type="button">Seek</button>
+            </div>
+            <span id="scrub-ghost" class="mono small npanel-scrub-ghost" aria-hidden="true"></span>
+          </div>
+        </div>
+        <div class="npanel-section">
+          <h3 class="npanel-sh">Active values <span class="npanel-sublab">(scrub / SEEK)</span></h3>
+          <div id="telemetry" class="telemetry-grid" role="list">—</div>
+        </div>
+        <div class="npanel-section">
+          <h3 class="npanel-sh">Bridge</h3>
+          <p class="npanel-bridge-hint">
+            The UI talks to <code>otl_marketlab_host</code> over a named pipe. Start the host in a terminal first, or set
+            <code>MARKET_LAB_SPAWN_HOST=1</code> and place <code>otl_marketlab_host.exe</code> next to <code>main.cjs</code>
+            (see <code>main.cjs</code> comments). Then use <strong>Ping host</strong> in the top bar.
+          </p>
+          <div id="heartbeat" class="mono small npanel-mono">—</div>
+        </div>
+      </aside>
+    </div>
+
+    <footer class="mlab-timeline" aria-label="Spreadsheet and timeline (temporal)">
+      <h2>Timeline (wall clock)</h2>
+      <p id="timeline-status" class="timeline-status mono">Load a CSV to enable scrub</p>
+      <canvas
+        id="timeline-canvas"
+        width="1200"
+        height="100"
+        aria-label="Scrubbable time axis, drag to seek"
+        role="slider"
+        aria-valuemin="0"
+        aria-valuemax="0"
+        tabindex="0"
+      ></canvas>
+      <p class="hint timeline-hint">Drag on the band to scrub; host maps bar ↔ wall time. Use <strong>Seek</strong> in the N-Panel for explicit jumps.</p>
+    </footer>
+    <script src="./node_modules/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="js/workbench.js"></script>
+    <script src="renderer.js"></script>
+  </body>
+</html>

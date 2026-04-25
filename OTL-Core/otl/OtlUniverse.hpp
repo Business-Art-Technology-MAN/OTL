@@ -22,6 +22,9 @@ class OtlUniverse {
   void set_m_series(int asset, std::string const& key, std::vector<double> series);
 
   bool try_get_m(int asset, char const* name, bool derivatives, float* val) const;
+
+  /// If a series was stored for `key` on `asset`, points `out` at it (read-only, valid until the series is replaced).
+  bool try_get_m_series(int asset, std::string const& key, std::vector<double> const** out) const;
   int last_asset() const { return m_last_asset; }
   void set_thread_asset(int a) { m_last_asset = a; }
 

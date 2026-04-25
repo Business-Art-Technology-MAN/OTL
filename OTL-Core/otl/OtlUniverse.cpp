@@ -84,6 +84,19 @@ void OtlUniverse::set_m_series(int asset, std::string const& key, std::vector<do
   }
 }
 
+bool OtlUniverse::try_get_m_series(int asset, std::string const& key, std::vector<double> const** out) const {
+  if (!out || asset < 0 || asset >= m_asset_count) {
+    return false;
+  }
+  auto const& pa = m_per[static_cast<std::size_t>(asset)];
+  auto s_it = pa.series.find(key);
+  if (s_it == pa.series.end() || s_it->second.empty()) {
+    return false;
+  }
+  *out = &s_it->second;
+  return true;
+}
+
 bool OtlUniverse::try_get_m(int asset, char const* name, bool derivatives, float* val) const {
   if (!val || !name) {
     return false;
