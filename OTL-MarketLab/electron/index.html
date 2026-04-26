@@ -34,7 +34,7 @@
             <div class="backdrop-stack" aria-hidden="true">
               <div id="backdrop-chart" class="backdrop-chart"></div>
               <div class="backdrop-dim"></div>
-              <span class="backdrop-floating-lbl">BACKDROP</span>
+              <span class="backdrop-floating-lbl" id="backdrop-floating-lbl">BACKDROP</span>
             </div>
             <svg
             id="node-board-svg"
@@ -69,6 +69,24 @@
                   fill="none"
                   stroke-width="2.5"
                   stroke-linecap="round"
+                  d=""
+                />
+                <path
+                  id="wire-sig-port-2"
+                  class="connect-wire connect-stream"
+                  fill="none"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-opacity="0.75"
+                  d=""
+                />
+                <path
+                  id="wire-sig-port-3"
+                  class="connect-wire connect-stream"
+                  fill="none"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-opacity="0.6"
                   d=""
                 />
                 <path
@@ -107,15 +125,24 @@
                 <text x="210" y="92" class="socket-tag mono" font-size="8" text-anchor="end">out</text>
               </g>
 
-              <g class="mlab-node" data-id="portfolio-mix" data-kind="port" transform="translate(600, 140)">
-                <rect class="node-chrome" x="0" y="0" width="200" height="100" rx="3" />
-                <rect class="node-hdr node-hdr-port" x="0" y="0" width="200" height="26" rx="3" />
-                <text x="8" y="17" class="node-hdr-text">Portfolio mix</text>
-                <text x="8" y="48" class="node-body-lbl">Composition</text>
-                <text x="8" y="66" class="node-body-val mono">equal-weight (stub)</text>
-                <text x="8" y="90" class="node-body-sock mono">3× signal in (future)</text>
-                <circle class="socket socket-in" cx="0" cy="100" r="5" data-io="in" />
-                <circle class="socket socket-out socket-cyan" cx="200" cy="100" r="5" data-io="out" />
+              <g class="mlab-node" data-id="portfolio-mix" data-kind="port" transform="translate(600, 118)">
+                <rect class="node-chrome" x="0" y="0" width="210" height="150" rx="3" />
+                <rect class="node-hdr node-hdr-port" x="0" y="0" width="210" height="26" rx="3" />
+                <text x="8" y="17" class="node-hdr-text">Portfolio · multi-signal</text>
+                <text x="8" y="40" class="node-body-lbl" font-size="8">Composites Uber signals into weights; closure + PnL feed.</text>
+                <text x="8" y="58" class="node-body-sock mono" font-size="8" fill="#9a8a6a">in</text>
+                <text x="20" y="55" class="node-body-sock" font-size="7" fill="#7a7a7a">Sig 1</text>
+                <text x="20" y="77" class="node-body-sock" font-size="7" fill="#7a7a7a">Sig 2</text>
+                <text x="20" y="99" class="node-body-sock" font-size="7" fill="#7a7a7a">Sig 3</text>
+                <circle class="socket socket-in socket-float" cx="0" cy="52" r="4.5" data-io="in" data-idx="1" />
+                <circle class="socket socket-in socket-float" cx="0" cy="74" r="4.5" data-io="in" data-idx="2" />
+                <circle class="socket socket-in socket-float" cx="0" cy="96" r="4.5" data-io="in" data-idx="3" />
+                <text x="8" y="120" class="node-body-sock mono" font-size="7">out (closure · purple)</text>
+                <text x="8" y="140" class="node-body-sock mono" font-size="7" fill="#6a8a6a">out (data → analysis)</text>
+                <circle class="socket socket-out" cx="210" cy="64" r="4.5" data-io="out" data-sock="closure" style="fill: #4a2a4a; stroke: #9c6a9a" />
+                <circle class="socket socket-out socket-cyan" cx="210" cy="108" r="5" data-io="out" data-sock="data" />
+                <text x="198" y="62" class="socket-tag mono" font-size="7" text-anchor="end">cl</text>
+                <text x="198" y="100" class="socket-tag mono" font-size="8" text-anchor="end">out</text>
               </g>
 
               <g class="mlab-node" data-id="analysis-metrics" data-kind="ana" transform="translate(860, 120)">

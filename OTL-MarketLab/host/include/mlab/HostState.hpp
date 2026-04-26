@@ -22,6 +22,8 @@ struct HostState {
   std::string              m_uber_config_json;
   /// Backdrop "shadow" trace: `m_attr` name in `OtlUniverse` (e.g. m_sma_20) from `lab.primary_overlay` in m_uber_config_json.
   std::string              m_primary_overlay;
+  /// JSON: method (equal|strength|risk), leverage, comm_bps, slippage_bps — applied on SEEK for `telemetry.portfolio`.
+  std::string              m_portfolio_config_json;
 
   /// Load `OTL_Data/.../universe_close_matrix.csv` style; fills bar labels and `m_close0`.
   bool load_data(std::string const& path, std::string& err);
@@ -32,6 +34,8 @@ struct HostState {
   bool apply_uber_config(std::string& err);
   /// Replace Uber JSON and, if a CSV is loaded, rebake immediately. Returns `apply_uber_config` result on loaded state.
   bool set_uber_signal_json(std::string json, std::string& err);
+  /// Portfolio compositor parameters from the UI; drives `telemetry.portfolio` in SEEK (host-side PnL path).
+  bool set_portfolio_json(std::string json, std::string& err);
 
   /// JSON for LOAD_DATA result.
   std::string load_data_json();

@@ -19,7 +19,10 @@
   let backdropChart = null;
   let closeLineSeries = null;
   let shadowLineSeries = null;
+  /** Drawdown area when Portfolio node is selected (data from `telemetry.portfolio`). */
+  let portfolioDdSeries = null;
   let backdropResizeObserver = null;
+  const PORTFOLIO_UI_KEY = "mlabPortfolioUiV1";
 
   function getLC() {
     return window.LightweightCharts;
@@ -279,30 +282,219 @@
       });
       backdropResizeObserver.observe(outer);
     }
+    try {
+      const AS = LC.AreaSeries;
+      if (AS && backdropChart && typeof backdropChart.addSeries === "function") {
+        portfolioDdSeries = backdropChart.addSeries(AS, {
+          lineColor: "rgba(220, 60, 60, 0.55)",
+          topColor: "rgba(200, 40, 40, 0.2)",
+          bottomColor: "rgba(10, 0, 0, 0.2)",
+          title: "drawdown (synth · close tail)",
+          priceScaleId: "dd",
+        });
+        if (typeof portfolioDdSeries.priceScale === "function") {
+          portfolioDdSeries.priceScale().applyOptions({ scaleMargins: { top: 0.2, bottom: 0 } });
+        }
+        portfolioDdSeries.applyOptions({ visible: false });
+        portfolioDdSeries.setData([]);
+      }
+    } catch (e) {
+      console.warn("MLWorkbench: portfolio drawdown area series", e);
+    }
+  }
+
+  /**
+   * @typedef {{ method: 'equal'|'strength'|'risk', leverage: number, commBps: number, slippageBps: number }} PortfolioUiV1
+   */
+
+  /** @returns {PortfolioUiV1} */
+  function defaultPortfolioUi() {
+    return { method: "equal", leverage: 1, commBps: 2, slippageBps: 5 };
+  }
+
+  /** @returns {PortfolioUiV1} */
+  function loadPortfolioUi() {
+    try {
+      const raw = localStorage.getItem(PORTFOLIO_UI_KEY);
+      if (!raw) {
+        return defaultPortfolioUi();
+      }
+      const o = JSON.parse(raw);
+      if (!o || typeof o !== "object") {
+        return defaultPortfolioUi();
+      }
+      const m = o.method;
+      const method = m === "strength" || m === "risk" ? m : "equal";
+      const lev = Number(o.leverage);
+      const c = Number(o.commBps);
+      const s = Number(o.slippageBps);
+      return {
+        method,
+        leverage: !Number.isFinite(lev) ? 1 : Math.min(5, Math.max(0.25, lev)),
+        commBps: !Number.isFinite(c) ? 2 : Math.max(0, c),
+        slippageBps: !Number.isFinite(s) ? 5 : Math.max(0, s),
+      };
+    } catch {
+      return defaultPortfolioUi();
+    }
+  }
+
+  /** @param {PortfolioUiV1} ui */
+  function savePortfolioUi(ui) {
+    try {
+      localStorage.setItem(PORTFOLIO_UI_KEY, JSON.stringify(ui));
+    } catch {
+      // ignore
+    }
+  }
+
+  /** Host `telemetry.portfolio` (no client-side PnL math). */
+  function getPortfolioTelemetry(/** @type {object} */ j) {
+    const t = j && j.telemetry;
+    const p = t && t.portfolio;
+    if (!p || typeof p !== "object") {
+      return null;
+    }
+    const eq = p.equity_tail;
+    if (!Array.isArray(eq) || eq.length < 2) {
+      return null;
+    }
+    const dd = p.drawdown_tail;
+    return {
+      equityTail: eq.map((x) => Number(x)),
+      ddTail: Array.isArray(dd) && dd.length === eq.length ? dd.map((x) => Number(x)) : null,
+      stats: p.stats && typeof p.stats === "object" ? p.stats : null,
+    };
+  }
+
+  function portfolioTailsToLineData(/** @type {object} */ j, /** @type {number[]} */ equityTail, /** @type {number[]|null} */ ddTail) {
+    const ref = closeTailToLineData(j);
+    if (!ref || ref.length < 2 || equityTail.length !== ref.length) {
+      return null;
+    }
+    const equity = ref.map((p, i) => ({ time: p.time, value: Number(equityTail[i]) }));
+    const dd =
+      ddTail && ddTail.length === ref.length
+        ? ref.map((p, i) => ({ time: p.time, value: -Math.abs(Number(ddTail[i])) }))
+        : null;
+    return { equity, dd };
+  }
+
+  function portfolioJsonForHost(/** @type {PortfolioUiV1} */ u) {
+    return JSON.stringify({
+      method: u.method,
+      leverage: u.leverage,
+      comm_bps: u.commBps,
+      slippage_bps: u.slippageBps,
+    });
+  }
+
+  let portfolioHostPushTimer = 0;
+  function schedulePushPortfolioToHost() {
+    if (portfolioHostPushTimer) {
+      clearTimeout(portfolioHostPushTimer);
+    }
+    portfolioHostPushTimer = window.setTimeout(() => {
+      portfolioHostPushTimer = 0;
+      void pushPortfolioToHost();
+    }, 200);
+  }
+
+  /**
+   * Pushes N-panel portfolio JSON to the host (`SET_PORTFOLIO`).
+   * @param {{ skipResync?: boolean } | void} [opts] If `skipResync`, do not re-SEEK (caller will SEEK).
+   */
+  async function pushPortfolioToHost(opts) {
+    const ml = window.marketLab;
+    if (!ml || typeof ml.setPortfolioConfig !== "function") {
+      return;
+    }
+    const u = getEffectivePortfolioUi();
+    const skip = opts && opts.skipResync;
+    try {
+      const line = await ml.setPortfolioConfig(portfolioJsonForHost(u));
+      if (typeof line === "string" && line.indexOf("OK ") === 0 && !skip) {
+        const fn = window.__mlabSeekResync;
+        if (typeof fn === "function") {
+          fn();
+        }
+      }
+    } catch (e) {
+      console.warn("MLWorkbench: setPortfolioConfig", e);
+    }
+  }
+
+  function updateBackdropFloatingLabel() {
+    const el = $("backdrop-floating-lbl");
+    if (!el) {
+      return;
+    }
+    if (selectedId === "portfolio-mix") {
+      el.textContent = "EQUITY + DRAWDOWN (host · telemetry.portfolio)";
+    } else {
+      el.textContent = "BACKDROP";
+    }
   }
 
   function updateBackdropFromSeek(/** @type {object} */ j) {
     if (!closeLineSeries) {
       return;
     }
-    const data = closeTailToLineData(j);
-    if (data.length < 2) {
-      closeLineSeries.setData([]);
-    } else {
-      closeLineSeries.setData(data);
-      if (backdropChart) {
-        backdropChart.timeScale().fitContent();
-      }
-    }
-    if (shadowLineSeries) {
-      const sh = j && j.shadow_overlay;
-      const a = sh && sh.m_attr != null ? String(sh.m_attr) : "";
-      if (sh && arrOk(sh.tail) && PIPELINE_SHADOW_NODE_IDS.has(selectedId) && isPriceScaleShadow(a)) {
-        shadowLineSeries.applyOptions({ visible: true });
-        shadowLineSeries.setData(tailToLineData(j, sh.tail));
-      } else {
+    if (selectedId === "portfolio-mix") {
+      const pt = getPortfolioTelemetry(j);
+      const mapped = pt ? portfolioTailsToLineData(j, pt.equityTail, pt.ddTail) : null;
+      if (shadowLineSeries) {
         shadowLineSeries.setData([]);
         shadowLineSeries.applyOptions({ visible: false });
+      }
+      if (!mapped) {
+        closeLineSeries.setData([]);
+        if (portfolioDdSeries) {
+          portfolioDdSeries.setData([]);
+          portfolioDdSeries.applyOptions({ visible: false });
+        }
+        closeLineSeries.applyOptions({ title: "equity (host)" });
+      } else {
+        closeLineSeries.setData(mapped.equity);
+        closeLineSeries.applyOptions({ title: "equity (host)" });
+        if (portfolioDdSeries) {
+          if (mapped.dd && mapped.dd.length > 0) {
+            portfolioDdSeries.setData(mapped.dd);
+            portfolioDdSeries.applyOptions({ visible: true });
+          } else {
+            portfolioDdSeries.setData([]);
+            portfolioDdSeries.applyOptions({ visible: false });
+          }
+        }
+        if (backdropChart) {
+          backdropChart.timeScale().fitContent();
+        }
+      }
+    } else {
+      const data = closeTailToLineData(j);
+      if (data.length < 2) {
+        closeLineSeries.setData([]);
+      } else {
+        closeLineSeries.setData(data);
+        if (backdropChart) {
+          backdropChart.timeScale().fitContent();
+        }
+      }
+      closeLineSeries.applyOptions({ title: "close (tail)" });
+      if (portfolioDdSeries) {
+        portfolioDdSeries.setData([]);
+        portfolioDdSeries.applyOptions({ visible: false });
+      }
+      if (shadowLineSeries) {
+        const sh = j && j.shadow_overlay;
+        const a = sh && sh.m_attr != null ? String(sh.m_attr) : "";
+        if (sh && arrOk(sh.tail) && PIPELINE_SHADOW_NODE_IDS.has(selectedId) && isPriceScaleShadow(a)) {
+          shadowLineSeries.applyOptions({ visible: true });
+          shadowLineSeries.setData(tailToLineData(j, sh.tail));
+        } else {
+          shadowLineSeries.setData([]);
+          shadowLineSeries.applyOptions({ visible: false });
+        }
       }
     }
     if (j && j.m_attrs_for_osl) {
@@ -319,7 +511,13 @@
   const NET = {
     "market-data": { out: { x: 200, y: 100 } },
     "signal-otl": { in: { x: 0, y: 100 }, out: { x: 220, y: 100 } },
-    "portfolio-mix": { in: { x: 0, y: 100 }, out: { x: 200, y: 100 } },
+    "portfolio-mix": {
+      in1: { x: 0, y: 52 },
+      in2: { x: 0, y: 74 },
+      in3: { x: 0, y: 96 },
+      outClosure: { x: 210, y: 64 },
+      outData: { x: 210, y: 108 },
+    },
     "analysis-metrics": { in: { x: 0, y: 100 } },
   };
 
@@ -341,10 +539,11 @@
         "• OSL <code>MarketDelegate</code> can resolve the same <code>m_*</code> when wired.\n• <strong>Backdrop</strong> orange shadow stays on for any <strong>green→blue→gold→purple</strong> node along the data path (same SEEK feed).\n• <strong>m_attrs_for_osl</strong> in SEEK lists register names.",
     },
     "portfolio-mix": {
-      title: "Portfolio · mix",
+      title: "Portfolio · multi-signal",
       body:
-        "Composition stage (GAL / weights). Multiple signal inputs; outputs strategy weights. Stub until host exports multi-leg graph.",
-      extra: "• Sliders: leverage, tilt (placeholder)",
+        "Composites <strong>signal inputs</strong> (grey sockets) with allocation, leverage, and cost controls. <strong>Closure</strong> (purple) is for trade history; <strong>data out</strong> (cyan) feeds Analysis. <strong>Backdrop</strong> and stats use the host <code>telemetry.portfolio</code> (equity and drawdown tails) after <code>SET_PORTFOLIO</code> and <code>SEEK</code>.",
+      extra:
+        "• Controls are pushed to the C++ host; each SEEK returns aligned <code>equity_tail</code> / <code>drawdown_tail</code> and <code>stats</code> for the N-Panel.",
     },
     "analysis-metrics": {
       title: "Analysis · metric table",
@@ -401,6 +600,41 @@
     <button type="button" class="btn-uber" id="uber-apply" title="Sends JSON to host: SET_UBER_SIGNAL">Apply to host</button>
   </div>
   <p class="uber-status" id="uber-status" role="status">Load a CSV, then use Apply to push indicators to the C++ host.</p>
+</div>`;
+
+  const PORTFOLIO_NPANEL_FORM = `
+<div class="npanel-portfo npanel-portfolio-fo" id="port-fo" aria-label="Portfolio compositor controls">
+  <div class="port-strip-hdr">Allocator &amp; frictions (host · PORT-CALC)</div>
+  <div class="port-row">
+    <label class="port-lab" for="port-alloc">Allocation</label>
+    <select class="port-sel" id="port-alloc" title="Equal weight, signal-strength, or vol-scaled (risk) — computed in the host on the close tail">
+      <option value="equal" selected>Equal weight</option>
+      <option value="strength">Signal strength</option>
+      <option value="risk">Risk parity (vol-scaled)</option>
+    </select>
+  </div>
+  <div class="port-row port-row-lev">
+    <label class="port-lab" for="port-lev">Leverage <span class="port-lev-disp" id="port-lev-disp">1.0×</span></label>
+    <input type="range" class="port-range" id="port-lev" min="0.25" max="5" step="0.05" value="1" />
+  </div>
+  <div class="port-row port-row-nums">
+    <label class="port-lab" for="port-comm" title="Round-trip bps (host friction model)">Comm. (bps)</label>
+    <input type="number" class="port-num" id="port-comm" min="0" max="200" step="0.5" value="2" />
+    <label class="port-lab" for="port-slip">Slippage (bps)</label>
+    <input type="number" class="port-num" id="port-slip" min="0" max="200" step="0.5" value="5" />
+  </div>
+  <div class="port-stats" id="port-stats" aria-live="polite">
+    <div class="port-stat-h">Backtest (host, same close tail as backdrop)</div>
+    <ul class="port-stat-grid">
+      <li><span>Total return</span> <strong id="port-stat-total">—</strong></li>
+      <li><span>Max DD</span> <strong id="port-stat-mdd">—</strong></li>
+      <li><span>Sharpe</span> <strong id="port-stat-sharpe">—</strong></li>
+      <li><span>Sortino</span> <strong id="port-stat-sortino">—</strong></li>
+      <li><span>Profit factor</span> <strong id="port-stat-pf">—</strong></li>
+      <li><span>PnL (tail end)</span> <strong id="port-stat-unrl">—</strong></li>
+    </ul>
+  </div>
+  <p class="port-hint" id="port-hint">Parameters are sent to the host; scrub to refresh <code>telemetry.portfolio</code> (same playhead as the rest of Market Lab).</p>
 </div>`;
 
   function $(id) {
@@ -665,6 +899,167 @@
     }
   }
 
+  /** @returns {PortfolioUiV1 | null} */
+  function parsePortfolioForm() {
+    if (!$("port-lev")) {
+      return null;
+    }
+    const a = /** @type {HTMLSelectElement | null} */ ($("port-alloc"));
+    const m = a && a.value;
+    const method = m === "strength" || m === "risk" ? m : "equal";
+    const lr = /** @type {HTMLInputElement | null} */ ($("port-lev"));
+    const c = /** @type {HTMLInputElement | null} */ ($("port-comm"));
+    const s = /** @type {HTMLInputElement | null} */ ($("port-slip"));
+    const lv = lr ? Number(lr.value) : 1;
+    return {
+      method,
+      leverage: !Number.isFinite(lv) ? 1 : Math.min(5, Math.max(0.25, lv)),
+      commBps: c ? Math.max(0, Number(c.value) || 0) : 2,
+      slippageBps: s ? Math.max(0, Number(s.value) || 0) : 5,
+    };
+  }
+
+  /** @returns {PortfolioUiV1} */
+  function getEffectivePortfolioUi() {
+    if (selectedId === "portfolio-mix") {
+      const p = parsePortfolioForm();
+      if (p) {
+        return p;
+      }
+    }
+    return loadPortfolioUi();
+  }
+
+  function applyPortfolioFormFromStorage() {
+    const u = loadPortfolioUi();
+    const a = /** @type {HTMLSelectElement | null} */ ($("port-alloc"));
+    const lr = /** @type {HTMLInputElement | null} */ ($("port-lev"));
+    const c = /** @type {HTMLInputElement | null} */ ($("port-comm"));
+    const s = /** @type {HTMLInputElement | null} */ ($("port-slip"));
+    if (a) {
+      a.value = u.method;
+    }
+    if (lr) {
+      lr.value = String(u.leverage);
+    }
+    if (c) {
+      c.value = String(u.commBps);
+    }
+    if (s) {
+      s.value = String(u.slippageBps);
+    }
+    const disp = $("port-lev-disp");
+    if (disp) {
+      disp.textContent = (Math.round(u.leverage * 100) / 100).toFixed(2) + "×";
+    }
+  }
+
+  function fmtP(x) {
+    if (x == null || !Number.isFinite(x)) {
+      return "—";
+    }
+    return (Math.round(x * 100) / 100).toFixed(2) + "%";
+  }
+
+  function fmtR(x) {
+    if (x == null || !Number.isFinite(x)) {
+      return "—";
+    }
+    if (x >= 99) {
+      return "∞";
+    }
+    return (Math.round(x * 100) / 100).toFixed(2);
+  }
+
+  function syncPortfolioStatsNpanel() {
+    if (!lastSeekJson || selectedId !== "portfolio-mix") {
+      return;
+    }
+    const pt = getPortfolioTelemetry(/** @type {object} */ (lastSeekJson));
+    const stats = pt && pt.stats;
+    const st = /** @type {HTMLSpanElement | null} */ ($("port-stat-total"));
+    const mdd = /** @type {HTMLSpanElement | null} */ ($("port-stat-mdd"));
+    const sh = /** @type {HTMLSpanElement | null} */ ($("port-stat-sharpe"));
+    const so = /** @type {HTMLSpanElement | null} */ ($("port-stat-sortino"));
+    const pf = /** @type {HTMLSpanElement | null} */ ($("port-stat-pf"));
+    const ur = /** @type {HTMLSpanElement | null} */ ($("port-stat-unrl"));
+    if (!stats) {
+      if (st) {
+        st.textContent = "\u2014";
+      }
+      if (mdd) {
+        mdd.textContent = "\u2014";
+      }
+      if (sh) {
+        sh.textContent = "\u2014";
+      }
+      if (so) {
+        so.textContent = "\u2014";
+      }
+      if (pf) {
+        pf.textContent = "\u2014";
+      }
+      if (ur) {
+        ur.textContent = "\u2014";
+      }
+      return;
+    }
+    if (st) {
+      st.textContent = fmtP(/** @type {number} */ (stats.total_return_pct));
+    }
+    if (mdd) {
+      mdd.textContent = fmtP(/** @type {number} */ (stats.max_drawdown_pct));
+    }
+    if (sh) {
+      sh.textContent = fmtR(/** @type {number} */ (stats.sharpe));
+    }
+    if (so) {
+      so.textContent = fmtR(/** @type {number} */ (stats.sortino));
+    }
+    if (pf) {
+      pf.textContent = fmtR(/** @type {number} */ (stats.profit_factor));
+    }
+    if (ur) {
+      ur.textContent = fmtP(/** @type {number} */ (stats.pnl_tail_end_pct));
+    }
+  }
+
+  function onPortfolioFormChanged() {
+    if (selectedId === "portfolio-mix") {
+      const lr = /** @type {HTMLInputElement | null} */ ($("port-lev"));
+      const disp = $("port-lev-disp");
+      if (lr && disp) {
+        const v = Number(lr.value);
+        disp.textContent = (Number.isFinite(v) ? (Math.round(v * 100) / 100).toFixed(2) : "1.00") + "×";
+      }
+    }
+    const p = parsePortfolioForm();
+    if (p) {
+      savePortfolioUi(p);
+    }
+    schedulePushPortfolioToHost();
+  }
+
+  function wirePortfolioDelegation() {
+    const body = $("npanel-item-body");
+    if (!body || body.dataset.mlPortfolioDelegate === "1") {
+      return;
+    }
+    body.dataset.mlPortfolioDelegate = "1";
+    body.addEventListener("input", (e) => {
+      const t = e.target;
+      if (t && t instanceof Element && t.closest && t.closest("#port-fo")) {
+        onPortfolioFormChanged();
+      }
+    });
+    body.addEventListener("change", (e) => {
+      const t = e.target;
+      if (t && t instanceof Element && t.closest && t.closest("#port-fo")) {
+        onPortfolioFormChanged();
+      }
+    });
+  }
+
   /**
    * @param {string} id node data-id
    * @returns {string}
@@ -692,6 +1087,14 @@
         `<h4 class="npanel-item-h">${t.title}</h4>` +
         `<p class="npanel-item-p">${t.body}</p>` +
         `<p class="npanel-item-p mono" id="npanel-ana-pipeline"></p>` +
+        `<p class="npanel-item-x">${t.extra}</p>`
+      );
+    }
+    if (id === "portfolio-mix") {
+      return (
+        `<h4 class="npanel-item-h">${t.title}</h4>` +
+        `<p class="npanel-item-p">${t.body}</p>` +
+        PORTFOLIO_NPANEL_FORM +
         `<p class="npanel-item-x">${t.extra}</p>`
       );
     }
@@ -777,18 +1180,28 @@
     };
     const w1 = a("wire-md-sig");
     const w2 = a("wire-sig-port");
+    const w2b = a("wire-sig-port-2");
+    const w2c = a("wire-sig-port-3");
     const w3 = a("wire-port-ana");
     const p1a = socketPoint("market-data", "out");
     const p1b = socketPoint("signal-otl", "in");
     const p2a = socketPoint("signal-otl", "out");
-    const p2b = socketPoint("portfolio-mix", "in");
-    const p3a = socketPoint("portfolio-mix", "out");
+    const p2b1 = socketPoint("portfolio-mix", "in1");
+    const p2b2 = socketPoint("portfolio-mix", "in2");
+    const p2b3 = socketPoint("portfolio-mix", "in3");
+    const p3a = socketPoint("portfolio-mix", "outData");
     const p3b = socketPoint("analysis-metrics", "in");
     if (w1) {
       w1.setAttribute("d", wirePath(p1a.x, p1a.y, p1b.x, p1b.y));
     }
     if (w2) {
-      w2.setAttribute("d", wirePath(p2a.x, p2a.y, p2b.x, p2b.y));
+      w2.setAttribute("d", wirePath(p2a.x, p2a.y, p2b1.x, p2b1.y));
+    }
+    if (w2b) {
+      w2b.setAttribute("d", wirePath(p2a.x, p2a.y, p2b2.x, p2b2.y));
+    }
+    if (w2c) {
+      w2c.setAttribute("d", wirePath(p2a.x, p2a.y, p2b3.x, p2b3.y));
     }
     if (w3) {
       w3.setAttribute("d", wirePath(p3a.x, p3a.y, p3b.x, p3b.y));
@@ -826,10 +1239,19 @@
     if (!closeLineSeries) {
       return;
     }
-    const hot = selectedId === "analysis-metrics";
-    closeLineSeries.applyOptions({
-      color: hot ? "rgba(186, 104, 200, 0.92)" : "rgba(100, 180, 120, 0.9)",
-    });
+    if (selectedId === "portfolio-mix") {
+      closeLineSeries.applyOptions({
+        color: "rgba(212, 180, 90, 0.95)",
+      });
+    } else if (selectedId === "analysis-metrics") {
+      closeLineSeries.applyOptions({
+        color: "rgba(186, 104, 200, 0.92)",
+      });
+    } else {
+      closeLineSeries.applyOptions({
+        color: "rgba(100, 180, 120, 0.9)",
+      });
+    }
   }
 
   function setSelectedNode(id) {
@@ -837,7 +1259,7 @@
     document.querySelectorAll("g.mlab-node").forEach((g) => {
       g.classList.toggle("selected", g.getAttribute("data-id") === id);
     });
-    if (id === "signal-otl" || id === "market-data" || id === "analysis-metrics") {
+    if (id === "signal-otl" || id === "market-data" || id === "analysis-metrics" || id === "portfolio-mix") {
       setNPanelCollapsed(false);
     }
     const np = $("npanel-item-body");
@@ -850,6 +1272,12 @@
     if (id === "analysis-metrics") {
       syncAnalysisPipelineNpanel();
     }
+    if (id === "portfolio-mix") {
+      applyPortfolioFormFromStorage();
+      wirePortfolioDelegation();
+      syncPortfolioStatsNpanel();
+    }
+    updateBackdropFloatingLabel();
     if (lastSeekJson) {
       updateBackdropFromSeek(/** @type {object} */ (lastSeekJson));
     } else {
@@ -1033,6 +1461,9 @@
     if (selectedId === "analysis-metrics") {
       syncAnalysisPipelineNpanel();
     }
+    if (selectedId === "portfolio-mix") {
+      syncPortfolioStatsNpanel();
+    }
   }
 
   function init() {
@@ -1050,13 +1481,14 @@
         toggleNPanel();
       }
     });
+    initBackdropChart();
     setSelectedNode(selectedId);
     buildUberConfig();
-    initBackdropChart();
     initBoardInteraction();
     updateWires();
     updateGraphTransform();
     updateZoomLabel();
+    void pushPortfolioToHost();
   }
 
   window.MLWorkbench = {
@@ -1064,5 +1496,7 @@
     onSeek: onSeekFromHost,
     setSelectedNode,
     updateWires,
+    /** @param {{ skipResync?: boolean } | void} [opts] forwarded to `pushPortfolioToHost` */
+    reapplyPortfolioToHost: (opts) => pushPortfolioToHost(opts),
   };
 })();

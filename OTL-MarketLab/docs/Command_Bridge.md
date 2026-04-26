@@ -26,6 +26,8 @@ Lightweight, line-based protocol between the **Electron** front end and the **ot
 | `PING` | Liveness; response documents bridge version. |
 | `LOAD_DATA <path>` | Absolute or repo-relative path to Yahoo-style CSV (same shape as `scripts/fetch_market_data.py` / `MarketDataCsv`). Host loads universe + boots default `OtlNodeSystem` (RSI on `m_close` in V1). |
 | `SEEK <time>` | Wall-clock navigation. `<time>` can be: bar index, ISO date `YYYY-MM-DD` prefix, or a full timestamp string; host maps to a bar, updates playhead, returns telemetry JSON (close tail, `m_rsi`, bridge heartbeat). |
+| `SET_UBER_SIGNAL <json>` | Reconfigure UBER (nodes / wiring) from JSON; use a follow-up `SEEK` to refresh `node_states` and telemetry. |
+| `SET_PORTFOLIO <json>` | Host-side portfolio config (allocations, costs, rebalancing, etc.); on success, issue `SEEK` to refresh `telemetry.portfolio` in `seek` responses. |
 | `QUIT` | Graceful end of client session. |
 
 ## Example

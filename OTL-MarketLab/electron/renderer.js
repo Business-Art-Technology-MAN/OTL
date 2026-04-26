@@ -477,6 +477,9 @@ async function onLoad() {
       clearMetricTiles();
       addMetricTile("load", pth, "ok");
       addMetricTile("bars", String(p.json.bars ?? "—"), "ok");
+      if (window.MLWorkbench && typeof window.MLWorkbench.reapplyPortfolioToHost === "function") {
+        await window.MLWorkbench.reapplyPortfolioToHost({ skipResync: true });
+      }
       await seekToBar(playheadBar);
     } else {
       setConn(false, "Load failed (see console)");
@@ -510,10 +513,12 @@ async function onSeek() {
 }
 
 window.addEventListener("DOMContentLoaded", () => {
-  // Must be set before MLWorkbench.init(): Apply → SET_UBER_SIGNAL → re-SEEK so node_states/telemetry match.
-  window.MLRendererSeekRefresh = function () {
+  // Must be set before MLWorkbench.init(): Apply → SET_UBER_SIGNAL / SET_PORTFOLIO → re-SEEK so node_states/telemetry match.
+  const seekResync = function () {
     return seekToBar(playheadBar);
   };
+  window.MLRendererSeekRefresh = seekResync;
+  window.__mlabSeekResync = seekResync;
 
   // Wire host actions first. If workbench init throws, Ping / Load / Seek must still work.
   $("btn-ping") && $("btn-ping").addEventListener("click", () => void onPing());

@@ -196,6 +196,9 @@ ipcMain.handle("mlab-seek", async (_e, t) => sendLine(`SEEK ${t}`));
 ipcMain.handle("mlab-set-uber", async (_e, /** @type {string} */ json) =>
   sendLine(`SET_UBER_SIGNAL ${json}`)
 );
+ipcMain.handle("mlab-set-portfolio", async (_e, /** @type {string} */ json) =>
+  sendLine(`SET_PORTFOLIO ${json}`)
+);
 ipcMain.handle("mlab-pick-csv", async () => {
   const win =
     mainWindow && !mainWindow.isDestroyed()

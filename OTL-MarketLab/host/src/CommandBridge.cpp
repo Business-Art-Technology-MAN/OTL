@@ -178,6 +178,21 @@ int run_command_bridge(mlab::host::HostState& state, std::string& out_error) {
         jerr["error"] = e.empty() ? "set_uber_signal failed" : e;
         send_msg(hPipe, std::string("ERR ") + jerr.dump());
       }
+    } else if (starts_with(line, "SET_PORTFOLIO ")) {
+      std::string json = line.substr(14);
+      trim_cmd(json);
+      std::string e;
+      if (state.set_portfolio_json(std::move(json), e)) {
+        nlohmann::json j;
+        j["ok"]              = true;
+        j["portfolio_set"]  = true;
+        send_msg(hPipe, std::string("OK ") + j.dump());
+      } else {
+        nlohmann::json jerr;
+        jerr["ok"]    = false;
+        jerr["error"] = e.empty() ? "set_portfolio failed" : e;
+        send_msg(hPipe, std::string("ERR ") + jerr.dump());
+      }
     } else if (line.empty()) {
       continue;
     } else {
@@ -258,6 +273,21 @@ int run_command_bridge(mlab::host::HostState& state, std::string& out_error) {
         nlohmann::json jerr;
         jerr["ok"]    = false;
         jerr["error"] = e.empty() ? "set_uber_signal failed" : e;
+        send_msg_fd(cfd, std::string("ERR ") + jerr.dump());
+      }
+    } else if (starts_with(line, "SET_PORTFOLIO ")) {
+      std::string json = line.substr(14);
+      trim_cmd(json);
+      std::string e;
+      if (state.set_portfolio_json(std::move(json), e)) {
+        nlohmann::json j;
+        j["ok"]              = true;
+        j["portfolio_set"]  = true;
+        send_msg_fd(cfd, std::string("OK ") + j.dump());
+      } else {
+        nlohmann::json jerr;
+        jerr["ok"]    = false;
+        jerr["error"] = e.empty() ? "set_portfolio failed" : e;
         send_msg_fd(cfd, std::string("ERR ") + jerr.dump());
       }
     } else if (line.empty()) {
