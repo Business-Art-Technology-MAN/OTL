@@ -41,6 +41,9 @@ struct HostState {
   std::string load_data_json();
   /// JSON for SEEK: node states, telemetry, bridge heartbeat.
   std::string seek_json(std::string const& time_token);
+
+  /// ANLY-CSV: write `Timestamp,Price,Signal,Weight,Daily_Return,Cumulative_Wealth,Drawdown` for the loaded series.
+  bool export_analysis_csv(std::string const& path, std::string& err);
 };
 
 }  // namespace mlab::host

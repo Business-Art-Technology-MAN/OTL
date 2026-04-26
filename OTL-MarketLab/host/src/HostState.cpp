@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
+#include <iomanip>
 #include <set>
 #include <sstream>
 #include <string>
@@ -307,30 +308,29 @@ static double vol_of_portfolio(int i, std::vector<double> const& closes, int win
   return st;
 }
 
-/// Host-computed portfolio series for SEEK. Electron renders `telemetry.portfolio` as-is.
-static void append_portfolio_telemetry(json& telem, std::string const& cfg_json) {
-  if (!telem.contains("close_tail") || !telem["close_tail"].is_array()) {
-    return;
+static char const* kDefaultPortfolioCfg = R"({"method":"equal","leverage":1,"comm_bps":2,"slippage_bps":5})";
+
+static json parse_portfolio_cfg_json(std::string const& cfg_json) {
+  std::string const& use_s = cfg_json.empty() ? std::string(kDefaultPortfolioCfg) : cfg_json;
+  try {
+    return json::parse(use_s);
+  } catch (...) {
+    return json::parse(kDefaultPortfolioCfg);
   }
-  json const& cj = telem["close_tail"];
-  std::vector<double> closes;
-  closes.reserve(cj.size());
-  for (auto const& x : cj) {
-    if (x.is_number()) {
-      closes.push_back(x.get<double>());
-    }
-  }
+}
+
+/// Shared PORT-CALC path: `eq_curve` / `dd_curve` length == `closes.size()`; max drawdown fraction in `max_dd_frac_out`.
+static void simulate_portfolio_equity_on_closes(
+    std::vector<double> const& closes,
+    json const&                jc,
+    std::vector<double>&         eq_curve,
+    std::vector<double>&         dd_curve,
+    double&                      max_dd_frac_out) {
+  eq_curve.clear();
+  dd_curve.clear();
   int const n = static_cast<int>(closes.size());
   if (n < 2) {
-    return;
-  }
-
-  static char const* kDefaultCfg = R"({"method":"equal","leverage":1,"comm_bps":2,"slippage_bps":5})";
-  std::string const& use_s       = cfg_json.empty() ? std::string(kDefaultCfg) : cfg_json;
-  json                 jc;
-  try {
-    jc = json::parse(use_s);
-  } catch (...) {
+    max_dd_frac_out = 0.0;
     return;
   }
   std::string method = "equal";
@@ -361,43 +361,50 @@ static void append_portfolio_telemetry(json& telem, std::string const& cfg_json)
   if (slip_bps < 0) {
     slip_bps = 0;
   }
-
-  int const             vol_win = 20;
-  double                peak    = 100.0;
-  double                eq      = 100.0;
-  double                max_dd  = 0.0;
-  std::vector<double>   eq_curve;
-  std::vector<double>   dd_curve;
+  int const           vol_win = 20;
+  double                peak  = 100.0;
+  double                eq    = 100.0;
+  double                max_d = 0.0;
   eq_curve.push_back(100.0);
   dd_curve.push_back(0.0);
   for (int i = 1; i < n; ++i) {
-    double r = closes[static_cast<std::size_t>(i)] / closes[static_cast<std::size_t>(i - 1)] - 1.0;
-    double v = vol_of_portfolio(i - 1, closes, vol_win);
-    double exp = leverage;
+    double r         = closes[static_cast<std::size_t>(i)] / closes[static_cast<std::size_t>(i - 1)] - 1.0;
+    double v         = vol_of_portfolio(i - 1, closes, vol_win);
+    double exp       = leverage;
     if (method == "strength") {
       double s = 0.5 + std::min(1.2, std::abs(r) * 100.0);
-      exp = std::min(leverage * 1.5, std::max(leverage * 0.3, (leverage * s) / 1.2));
+      exp    = std::min(leverage * 1.5, std::max(leverage * 0.3, (leverage * s) / 1.2));
     } else if (method == "risk") {
       double const target = 0.12;
-      exp = (leverage * target) / std::max(1e-4, v * std::sqrt(252.0));
-      exp = std::min(leverage * 1.5, std::max(leverage * 0.25, exp));
+      exp                 = (leverage * target) / std::max(1e-4, v * std::sqrt(252.0));
+      exp                 = std::min(leverage * 1.5, std::max(leverage * 0.25, exp));
     }
-    double fric_bps = comm_bps * 0.1 + slip_bps * std::min(1.0, std::abs(r) * 12.0);
-    double d_eq     = r * exp - fric_bps / 10000.0;
-    eq = eq * (1.0 + d_eq);
+    double fric_bps    = comm_bps * 0.1 + slip_bps * std::min(1.0, std::abs(r) * 12.0);
+    double d_eq        = r * exp - fric_bps / 10000.0;
+    eq                 = eq * (1.0 + d_eq);
     if (eq > peak) {
       peak = eq;
     }
     double ddp = (peak > 0) ? (peak - eq) / peak : 0.0;
-    if (ddp > max_dd) {
-      max_dd = ddp;
+    if (ddp > max_d) {
+      max_d = ddp;
     }
     eq_curve.push_back(eq);
     dd_curve.push_back(ddp);
   }
+  max_dd_frac_out = max_d;
+}
 
+static void fill_portfolio_stats_from_eq_curve(
+    std::vector<double> const& eq_curve,
+    double                      max_dd_frac,
+    json&                      stats) {
+  int const     n  = static_cast<int>(eq_curve.size());
+  double        eq = 100.0;
+  if (n > 0) {
+    eq = eq_curve[static_cast<std::size_t>(n - 1)];
+  }
   std::vector<double> d_ret;
-  d_ret.reserve(static_cast<std::size_t>(n - 1U));
   for (int i = 1; i < n; ++i) {
     double a = eq_curve[static_cast<std::size_t>(i)];
     double b = eq_curve[static_cast<std::size_t>(i - 1)];
@@ -415,20 +422,20 @@ static void append_portfolio_telemetry(json& telem, std::string const& cfg_json)
     double d = x - m;
     var_sum += d * d;
   }
-  int const dz = static_cast<int>(d_ret.size());
-  double    st = (dz > 1) ? std::sqrt(var_sum / static_cast<double>(dz - 1)) : 0.0;
+  int const dz  = static_cast<int>(d_ret.size());
+  double    st  = (dz > 1) ? std::sqrt(var_sum / static_cast<double>(dz - 1)) : 0.0;
   std::vector<double> neg;
   for (double x : d_ret) {
     if (x < 0) {
       neg.push_back(x);
     }
   }
-  int const nn = static_cast<int>(neg.size());
-  double    d_var = 0;
+  int const nn  = static_cast<int>(neg.size());
+  double d_varr = 0;
   for (double x : neg) {
-    d_var += x * x;
+    d_varr += x * x;
   }
-  double d_st   = (nn > 1) ? std::sqrt(d_var / static_cast<double>(nn - 1)) : 0.0;
+  double d_st  = (nn > 1) ? std::sqrt(d_varr / static_cast<double>(nn - 1)) : 0.0;
   double sharpe = (st > 1e-12) ? (m / st) * std::sqrt(252.0) : 0.0;
   double sortv  = (d_st > 1e-12) ? (m / d_st) * std::sqrt(252.0) : 0.0;
   double pos    = 0;
@@ -447,6 +454,58 @@ static void append_portfolio_telemetry(json& telem, std::string const& cfg_json)
   } else if (pos > 0) {
     profit_factor = 99.99;
   }
+  int win = 0;
+  for (double x : d_ret) {
+    if (x > 0) {
+      ++win;
+    }
+  }
+  double win_rate = (!d_ret.empty()) ? (100.0 * static_cast<double>(win) / static_cast<double>(d_ret.size())) : 0.0;
+
+  double total_return_pct   = (eq / 100.0 - 1.0) * 100.0;
+  double max_drawdown_pct   = max_dd_frac * 100.0;
+  double pnl_tail_end_pct   = (eq / 100.0 - 1.0) * 100.0;
+  double years              = (n > 1) ? static_cast<double>(n - 1) / 252.0 : 0.0;
+  double cagr_pct           = 0.0;
+  if (years > 1e-6 && eq > 0) {
+    cagr_pct = (std::pow(eq / 100.0, 1.0 / years) - 1.0) * 100.0;
+  }
+  stats["total_return_pct"]   = total_return_pct;
+  stats["max_drawdown_pct"]   = max_drawdown_pct;
+  stats["sharpe"]             = sharpe;
+  stats["sortino"]            = sortv;
+  stats["profit_factor"]      = profit_factor;
+  stats["pnl_tail_end_pct"]   = pnl_tail_end_pct;
+  stats["cagr_pct"]           = cagr_pct;
+  stats["win_rate_pct"]       = win_rate;
+  stats["n_periods"]          = static_cast<int>(d_ret.size());
+}
+
+/// Host-computed portfolio series for SEEK. Electron renders `telemetry.portfolio` as-is.
+static void append_portfolio_telemetry(json& telem, std::string const& cfg_json) {
+  if (!telem.contains("close_tail") || !telem["close_tail"].is_array()) {
+    return;
+  }
+  json const& cj = telem["close_tail"];
+  std::vector<double> closes;
+  closes.reserve(cj.size());
+  for (auto const& x : cj) {
+    if (x.is_number()) {
+      closes.push_back(x.get<double>());
+    }
+  }
+  int const n = static_cast<int>(closes.size());
+  if (n < 2) {
+    return;
+  }
+  json   jc  = parse_portfolio_cfg_json(cfg_json);
+  double mxd = 0;
+  std::vector<double> eq_curve;
+  std::vector<double> dd_curve;
+  simulate_portfolio_equity_on_closes(closes, jc, eq_curve, dd_curve, mxd);
+
+  json   stats = json::object();
+  fill_portfolio_stats_from_eq_curve(eq_curve, mxd, stats);
 
   json j_eq = json::array();
   json j_dd = json::array();
@@ -457,22 +516,136 @@ static void append_portfolio_telemetry(json& telem, std::string const& cfg_json)
     j_dd.push_back(d);
   }
 
-  double total_return_pct = (eq / 100.0 - 1.0) * 100.0;
-  double max_drawdown_pct = max_dd * 100.0;
-  double pnl_tail_end_pct = (eq / 100.0 - 1.0) * 100.0;
-  json   stats            = json::object();
-  stats["total_return_pct"]  = total_return_pct;
-  stats["max_drawdown_pct"]  = max_drawdown_pct;
-  stats["sharpe"]            = sharpe;
-  stats["sortino"]           = sortv;
-  stats["profit_factor"]     = profit_factor;
-  stats["pnl_tail_end_pct"]  = pnl_tail_end_pct;
-
   json port = json::object();
-  port["equity_tail"]    = std::move(j_eq);
-  port["drawdown_tail"]  = std::move(j_dd);
-  port["stats"]          = std::move(stats);
-  telem["portfolio"]     = std::move(port);
+  port["equity_tail"]   = std::move(j_eq);
+  port["drawdown_tail"] = std::move(j_dd);
+  port["stats"]         = std::move(stats);
+  telem["portfolio"]    = std::move(port);
+}
+
+static std::string pick_signal_m_attr(otl::OtlNodeSystem const& ns) {
+  for (auto const& in : ns.indicator_nodes()) {
+    if (in.m_attr.rfind("m_rsi", 0) == 0) {
+      return in.m_attr;
+    }
+  }
+  for (auto const& in : ns.indicator_nodes()) {
+    return in.m_attr;
+  }
+  return "m_rsi_14";
+}
+
+static void append_analysis_telemetry(
+    json&                      telem,
+    int                        playhead,
+    std::vector<double> const& m_close0,
+    std::vector<std::string> const& m_bar_labels,
+    std::string const&         m_portfolio_config_json,
+    otl::OtlUniverse const&    u,
+    otl::OtlNodeSystem const&  ns) {
+  if (m_close0.size() < 2 || playhead < 0) {
+    return;
+  }
+  int const bmax = static_cast<int>(m_close0.size()) - 1;
+  int         b  = playhead;
+  if (b > bmax) {
+    b = bmax;
+  }
+  std::vector<double> closes(m_close0.begin(), m_close0.begin() + static_cast<std::size_t>(b) + 1U);
+  int const n = static_cast<int>(closes.size());
+  if (n < 2) {
+    return;
+  }
+  json  jc  = parse_portfolio_cfg_json(m_portfolio_config_json);
+  double mxd = 0;
+  std::vector<double> eq_curve;
+  std::vector<double> dd_curve;
+  simulate_portfolio_equity_on_closes(closes, jc, eq_curve, dd_curve, mxd);
+
+  std::vector<double> bh(n, 100.0);
+  for (int i = 1; i < n; ++i) {
+    double prev = closes[static_cast<std::size_t>(i - 1)];
+    double c    = closes[static_cast<std::size_t>(i)];
+    if (prev > 1e-12) {
+      bh[static_cast<std::size_t>(i)] = bh[static_cast<std::size_t>(i - 1)] * (c / prev);
+    } else {
+      bh[static_cast<std::size_t>(i)] = bh[static_cast<std::size_t>(i - 1)];
+    }
+  }
+
+  std::string const sig_attr = pick_signal_m_attr(ns);
+  std::vector<double> const* sig_ser = nullptr;
+  (void)u.try_get_m_series(0, sig_attr, &sig_ser);
+  if (!sig_ser || sig_ser->size() < m_close0.size()) {
+    sig_ser = nullptr;
+  }
+  double weight_scalar = 1.0;
+  if (jc.contains("leverage") && jc["leverage"].is_number()) {
+    weight_scalar = jc["leverage"].get<double>();
+  }
+
+  json summary = json::object();
+  fill_portfolio_stats_from_eq_curve(eq_curve, mxd, summary);
+  double bh_tr = (bh[static_cast<std::size_t>(n - 1)] / 100.0 - 1.0) * 100.0;
+  summary["buy_hold_total_return_pct"] = bh_tr;
+
+  int const   kTailLen = 32;
+  int         i0       = b - kTailLen + 1;
+  if (i0 < 0) {
+    i0 = 0;
+  }
+  json        jw = json::array();
+  json        jb = json::array();
+  for (int i = i0; i <= b; ++i) {
+    jw.push_back(eq_curve[static_cast<std::size_t>(i)]);
+    jb.push_back(bh[static_cast<std::size_t>(i)]);
+  }
+  telem["analysis"]                = json::object();
+  telem["analysis"]["signal_attr"]   = sig_attr;
+  telem["analysis"]["summary"]       = std::move(summary);
+  telem["analysis"]["wealth_tail"]   = jw;
+  telem["analysis"]["buy_hold_tail"] = jb;
+
+  // Preview table (last 48 rows up to playhead)
+  int const prev_n = 48;
+  int       p0     = b - (prev_n - 1);
+  if (p0 < 0) {
+    p0 = 0;
+  }
+  json prev = json::array();
+  for (int i = p0; i <= b; ++i) {
+    std::string ts;
+    if (i < static_cast<int>(m_bar_labels.size())) {
+      ts = m_bar_labels[static_cast<std::size_t>(i)];
+    }
+    double pr = closes[static_cast<std::size_t>(i)];
+    double sg = 0.0;
+    if (sig_ser && i < static_cast<int>(sig_ser->size())) {
+      sg = (*sig_ser)[static_cast<std::size_t>(i)];
+    }
+    double wgt = weight_scalar;
+    double dret  = 0.0;
+    if (i > 0) {
+      double pa = eq_curve[static_cast<std::size_t>(i - 1)];
+      double cu = eq_curve[static_cast<std::size_t>(i)];
+      dret     = (pa > 1e-12) ? 100.0 * (cu / pa - 1.0) : 0.0;
+    }
+    double cwl = eq_curve[static_cast<std::size_t>(i)];
+    double ddw = 100.0 * dd_curve[static_cast<std::size_t>(i)];
+    json row   = json::object();
+    row["bar"]     = i;
+    row["timestamp"] = ts;
+    row["price"]   = pr;
+    row["signal"]  = sg;
+    row["weight"]  = wgt;
+    row["daily_return_pct"] = dret;
+    row["cumulative_wealth"]  = cwl;
+    row["drawdown_pct"]  = ddw;
+    prev.push_back(std::move(row));
+  }
+  telem["analysis"]["preview"]                  = std::move(prev);
+  telem["analysis"]["preview_start_bar"]       = p0;
+  telem["analysis"]["preview_playhead_index"]  = b - p0;
 }
 
 static void fill_node_states(otl::OtlUniverse const& u, otl::OtlNodeSystem const& ns, json& out) {
@@ -563,10 +736,85 @@ std::string HostState::seek_json(std::string const& time_token) {
   }
 
   append_portfolio_telemetry(telem, m_portfolio_config_json);
+  append_analysis_telemetry(
+      telem, b, m_close0, m_bar_labels, m_portfolio_config_json, m_universe, m_node_system);
   j["telemetry"] = std::move(telem);
   j["bridge_heartbeat"] =
       json::object({{"host", "ok"}, {"vector_ta", "linked"}, {"cxx", "ok"}});
   return j.dump();
+}
+
+bool HostState::export_analysis_csv(std::string const& path, std::string& err) {
+  err.clear();
+  if (m_bars <= 0 || m_close0.empty() || m_close0.size() != static_cast<std::size_t>(m_bars)) {
+    err = "no data loaded";
+    return false;
+  }
+  set_playhead(m_bars - 1);
+  json  jc  = parse_portfolio_cfg_json(m_portfolio_config_json);
+  std::string const sig_attr = pick_signal_m_attr(m_node_system);
+  std::vector<double> const* sig_ser = nullptr;
+  (void)m_universe.try_get_m_series(0, sig_attr, &sig_ser);
+  if (!sig_ser || sig_ser->size() < static_cast<std::size_t>(m_bars)) {
+    sig_ser = nullptr;
+  }
+  double   mxd = 0;
+  std::vector<double> eq_curve;
+  std::vector<double> dd_curve;
+  simulate_portfolio_equity_on_closes(m_close0, jc, eq_curve, dd_curve, mxd);
+  if (static_cast<int>(eq_curve.size()) != m_bars) {
+    err = "export: equity length mismatch";
+    return false;
+  }
+  std::vector<double> bh(static_cast<std::size_t>(m_bars), 100.0);
+  for (int i = 1; i < m_bars; ++i) {
+    double prev = m_close0[static_cast<std::size_t>(i - 1)];
+    double c    = m_close0[static_cast<std::size_t>(i)];
+    if (prev > 1e-12) {
+      bh[static_cast<std::size_t>(i)] = bh[static_cast<std::size_t>(i - 1)] * (c / prev);
+    } else {
+      bh[static_cast<std::size_t>(i)] = bh[static_cast<std::size_t>(i - 1)];
+    }
+  }
+  double wgt = 1.0;
+  if (jc.contains("leverage") && jc["leverage"].is_number()) {
+    wgt = jc["leverage"].get<double>();
+  }
+  std::ofstream f(path, std::ios::out);
+  if (!f) {
+    err = "cannot open path for write";
+    return false;
+  }
+  f.setf(std::ios::fixed);
+  f << "Timestamp,Price,Signal,Weight,Daily_Return,Cumulative_Wealth,Drawdown\n";
+  f << std::setprecision(10);
+  for (int i = 0; i < m_bars; ++i) {
+    std::string ts;
+    if (i < static_cast<int>(m_bar_labels.size())) {
+      ts = m_bar_labels[static_cast<std::size_t>(i)];
+    }
+    double pr = m_close0[static_cast<std::size_t>(i)];
+    double sg = 0.0;
+    if (sig_ser) {
+      sg = (*sig_ser)[static_cast<std::size_t>(i)];
+    }
+    double dret = 0.0;
+    if (i > 0) {
+      double pa = eq_curve[static_cast<std::size_t>(i - 1)];
+      double cu = eq_curve[static_cast<std::size_t>(i)];
+      dret = (pa > 1e-12) ? 100.0 * (cu / pa - 1.0) : 0.0;
+    }
+    double cwl  = eq_curve[static_cast<std::size_t>(i)];
+    double ddw  = 100.0 * dd_curve[static_cast<std::size_t>(i)];
+    f << ts << ',' << pr << ',' << sg << ',' << wgt << ',' << dret << ',' << cwl << ',' << ddw;
+    f << "\n";
+  }
+  f.close();
+  if (!f) {
+    err = "write failed";
+    return false;
+  }
+  return true;
 }
 
 std::string HostState::load_data_json() {

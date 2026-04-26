@@ -28,6 +28,7 @@ Lightweight, line-based protocol between the **Electron** front end and the **ot
 | `SEEK <time>` | Wall-clock navigation. `<time>` can be: bar index, ISO date `YYYY-MM-DD` prefix, or a full timestamp string; host maps to a bar, updates playhead, returns telemetry JSON (close tail, `m_rsi`, bridge heartbeat). |
 | `SET_UBER_SIGNAL <json>` | Reconfigure UBER (nodes / wiring) from JSON; use a follow-up `SEEK` to refresh `node_states` and telemetry. |
 | `SET_PORTFOLIO <json>` | Host-side portfolio config (allocations, costs, rebalancing, etc.); on success, issue `SEEK` to refresh `telemetry.portfolio` in `seek` responses. |
+| `EXPORT_CSV <json>` | Analysis export (ANLY-CSV). JSON must include `"path"`: the absolute path to create/overwrite. Host writes `Timestamp,Price,Signal,Weight,Daily_Return,Cumulative_Wealth,Drawdown` (see `HostState::export_analysis_csv`). If JSON parse fails, the rest of the line is treated as a raw path (no spaces, or use JSON). |
 | `QUIT` | Graceful end of client session. |
 
 ## Example

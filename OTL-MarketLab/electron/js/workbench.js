@@ -21,6 +21,8 @@
   let shadowLineSeries = null;
   /** Drawdown area when Portfolio node is selected (data from `telemetry.portfolio`). */
   let portfolioDdSeries = null;
+  /** Buy & hold benchmark line when Analysis node is selected (`telemetry.analysis.buy_hold_tail`). */
+  let analysisBuyHoldLineSeries = null;
   let backdropResizeObserver = null;
   const PORTFOLIO_UI_KEY = "mlabPortfolioUiV1";
 
@@ -301,6 +303,22 @@
     } catch (e) {
       console.warn("MLWorkbench: portfolio drawdown area series", e);
     }
+    try {
+      const LineS = LC.LineSeries;
+      const bhOpts = {
+        color: "rgba(150, 150, 150, 0.65)",
+        lineWidth: 1,
+        title: "buy & hold (host)",
+        visible: false,
+      };
+      if (LineS && backdropChart && typeof backdropChart.addSeries === "function") {
+        analysisBuyHoldLineSeries = backdropChart.addSeries(LineS, bhOpts);
+      } else if (backdropChart && typeof backdropChart.addLineSeries === "function") {
+        analysisBuyHoldLineSeries = backdropChart.addLineSeries(bhOpts);
+      }
+    } catch (e) {
+      console.warn("MLWorkbench: analysis B&H line", e);
+    }
   }
 
   /**
@@ -345,6 +363,53 @@
       localStorage.setItem(PORTFOLIO_UI_KEY, JSON.stringify(ui));
     } catch {
       // ignore
+    }
+  }
+
+  /** Host `telemetry.analysis` (ANLY-CALC). */
+  function getAnalysisTelemetry(/** @type {object} */ j) {
+    const t = j && j.telemetry;
+    const a = t && t.analysis;
+    if (!a || typeof a !== "object") {
+      return null;
+    }
+    const w = a.wealth_tail;
+    if (!Array.isArray(w) || w.length < 2) {
+      return null;
+    }
+    const bh = a.buy_hold_tail;
+    return {
+      wealthTail: w.map((x) => Number(x)),
+      buyHoldTail: Array.isArray(bh) && bh.length === w.length ? bh.map((x) => Number(x)) : null,
+      summary: a.summary && typeof a.summary === "object" ? a.summary : null,
+      preview: Array.isArray(a.preview) ? a.preview : [],
+      previewPlayheadIndex:
+        typeof a.preview_playhead_index === "number" ? a.preview_playhead_index : 0,
+      signalAttr: a.signal_attr != null ? String(a.signal_attr) : "",
+    };
+  }
+
+  function setBackdropLogScale(/** @type {boolean} */ enabled) {
+    if (!backdropChart) {
+      return;
+    }
+    const LC = getLC();
+    let mode = 0;
+    if (LC && LC.PriceScaleMode) {
+      mode = enabled ? LC.PriceScaleMode.Logarithmic : LC.PriceScaleMode.Normal;
+    } else {
+      mode = enabled ? 1 : 0;
+    }
+    try {
+      if (typeof backdropChart.priceScale === "function") {
+        backdropChart.priceScale("right").applyOptions({ mode: mode });
+      } else {
+        backdropChart.applyOptions({
+          rightPriceScale: { mode: mode },
+        });
+      }
+    } catch (e) {
+      console.warn("MLWorkbench: price scale mode", e);
     }
   }
 
@@ -431,6 +496,8 @@
     }
     if (selectedId === "portfolio-mix") {
       el.textContent = "EQUITY + DRAWDOWN (host · telemetry.portfolio)";
+    } else if (selectedId === "analysis-metrics") {
+      el.textContent = "STRATEGY WEALTH vs BUY & HOLD (log · host · telemetry.analysis)";
     } else {
       el.textContent = "BACKDROP";
     }
@@ -441,6 +508,11 @@
       return;
     }
     if (selectedId === "portfolio-mix") {
+      setBackdropLogScale(false);
+      if (analysisBuyHoldLineSeries) {
+        analysisBuyHoldLineSeries.setData([]);
+        analysisBuyHoldLineSeries.applyOptions({ visible: false });
+      }
       const pt = getPortfolioTelemetry(j);
       const mapped = pt ? portfolioTailsToLineData(j, pt.equityTail, pt.ddTail) : null;
       if (shadowLineSeries) {
@@ -470,7 +542,47 @@
           backdropChart.timeScale().fitContent();
         }
       }
+    } else if (selectedId === "analysis-metrics") {
+      setBackdropLogScale(true);
+      if (portfolioDdSeries) {
+        portfolioDdSeries.setData([]);
+        portfolioDdSeries.applyOptions({ visible: false });
+      }
+      if (shadowLineSeries) {
+        shadowLineSeries.setData([]);
+        shadowLineSeries.applyOptions({ visible: false });
+      }
+      const at = getAnalysisTelemetry(j);
+      const ref = closeTailToLineData(j);
+      if (!at || !ref || ref.length < 2 || at.wealthTail.length !== ref.length) {
+        closeLineSeries.setData([]);
+        if (analysisBuyHoldLineSeries) {
+          analysisBuyHoldLineSeries.setData([]);
+          analysisBuyHoldLineSeries.applyOptions({ visible: false });
+        }
+        closeLineSeries.applyOptions({ title: "wealth (host)" });
+      } else {
+        const wealth = ref.map((p, i) => ({ time: p.time, value: Number(at.wealthTail[i]) }));
+        closeLineSeries.setData(wealth);
+        closeLineSeries.applyOptions({ title: "strategy wealth (host)" });
+        if (analysisBuyHoldLineSeries && at.buyHoldTail && at.buyHoldTail.length === ref.length) {
+          const bhd = ref.map((p, i) => ({ time: p.time, value: Number(at.buyHoldTail[i]) }));
+          analysisBuyHoldLineSeries.setData(bhd);
+          analysisBuyHoldLineSeries.applyOptions({ visible: true, title: "buy & hold (host)" });
+        } else if (analysisBuyHoldLineSeries) {
+          analysisBuyHoldLineSeries.setData([]);
+          analysisBuyHoldLineSeries.applyOptions({ visible: false });
+        }
+        if (backdropChart) {
+          backdropChart.timeScale().fitContent();
+        }
+      }
     } else {
+      setBackdropLogScale(false);
+      if (analysisBuyHoldLineSeries) {
+        analysisBuyHoldLineSeries.setData([]);
+        analysisBuyHoldLineSeries.applyOptions({ visible: false });
+      }
       const data = closeTailToLineData(j);
       if (data.length < 2) {
         closeLineSeries.setData([]);
@@ -546,10 +658,11 @@
         "• Controls are pushed to the C++ host; each SEEK returns aligned <code>equity_tail</code> / <code>drawdown_tail</code> and <code>stats</code> for the N-Panel.",
     },
     "analysis-metrics": {
-      title: "Analysis · metric table",
+      title: "Analysis · performance viewer",
       body:
-        "End of the <strong>visual pipeline</strong> (wires in the graph). The host’s SEEK JSON already carries a unified <code>node_states</code> map and telemetry for the current bar; use <strong>Active values</strong> for live numbers. Sharpe / Sortino / CAGR can plug in from the host in a later milestone.",
-      extra: "• Same SEEK stream as the Market → Uber → … chain\n• <strong>Backdrop</strong> turns the <strong>close</strong> line purple when this node is selected",
+        "Host-computed <strong>ANLY-CALC</strong> summary and preview rows in <code>telemetry.analysis</code>. <strong>Backdrop</strong> uses a <strong>log</strong> scale: strategy wealth vs buy &amp; hold benchmark on the same close tail. Use <strong>Save to CSV</strong> for <code>EXPORT_CSV</code> (ANLY-CSV).",
+      extra:
+        "• Preview table highlights the playhead row (ANLY-VIS)\n• Signal column uses the host’s first RSI series when available, else 0",
     },
   };
 
@@ -635,6 +748,41 @@
     </ul>
   </div>
   <p class="port-hint" id="port-hint">Parameters are sent to the host; scrub to refresh <code>telemetry.portfolio</code> (same playhead as the rest of Market Lab).</p>
+</div>`;
+
+  const ANALYSIS_NPANEL_FORM = `
+<div class="ana-npanel" id="ana-fo" aria-label="Analysis viewer">
+  <div class="ana-strip-hdr">Financial summary (host · ANLY-CALC)</div>
+  <p class="ana-sig mono" id="ana-sig-attr" role="status">—</p>
+  <table class="ana-table" id="ana-sum-table" aria-label="Metrics">
+    <thead><tr><th>Metric</th><th>Value</th></tr></thead>
+    <tbody>
+      <tr><td>CAGR</td><td id="ana-v-cagr">—</td></tr>
+      <tr><td>Total return</td><td id="ana-v-tr">—</td></tr>
+      <tr><td>Max DD</td><td id="ana-v-mdd">—</td></tr>
+      <tr><td>Sharpe</td><td id="ana-v-sh">—</td></tr>
+      <tr><td>Sortino</td><td id="ana-v-so">—</td></tr>
+      <tr><td>Profit factor</td><td id="ana-v-pf">—</td></tr>
+      <tr><td>Win rate</td><td id="ana-v-wr">—</td></tr>
+      <tr><td>Buy &amp; hold (TR)</td><td id="ana-v-bh">—</td></tr>
+    </tbody>
+  </table>
+  <div class="ana-strip-hdr ana-mt">Preview (scrub row)</div>
+  <div class="ana-preview-wrap" id="ana-preview-wrap" role="region" aria-label="Export preview" tabindex="0">
+    <table class="ana-preview-tbl" id="ana-preview-tbl" aria-label="SEEK rows">
+      <thead>
+        <tr>
+          <th>Time</th><th>Price</th><th>Sig</th><th>W</th>
+          <th>Δ%</th><th>Wealth</th><th>DD%</th>
+        </tr>
+      </thead>
+      <tbody id="ana-preview-body"></tbody>
+    </table>
+  </div>
+  <div class="ana-csv-row">
+    <button type="button" class="btn-ana-csv" id="btn-ana-csv" title="EXPORT_CSV path via host">Save to CSV…</button>
+    <p class="ana-csv-st" id="ana-csv-status" role="status"></p>
+  </div>
 </div>`;
 
   function $(id) {
@@ -899,6 +1047,161 @@
     }
   }
 
+  function syncAnalysisDashboardNpanel() {
+    if (selectedId !== "analysis-metrics" || !lastSeekJson) {
+      return;
+    }
+    const at = getAnalysisTelemetry(/** @type {object} */ (lastSeekJson));
+    const s = at && at.summary;
+    const sig = $("ana-sig-attr");
+    if (sig) {
+      sig.textContent = at && at.signalAttr ? "Signal series: " + at.signalAttr : "Signal series: —";
+    }
+    const setT = (/** @type {string} */ id, /** @type {string} */ v) => {
+      const el = $(id);
+      if (el) {
+        el.textContent = v;
+      }
+    };
+    if (!s) {
+      setT("ana-v-cagr", "—");
+      setT("ana-v-tr", "—");
+      setT("ana-v-mdd", "—");
+      setT("ana-v-sh", "—");
+      setT("ana-v-so", "—");
+      setT("ana-v-pf", "—");
+      setT("ana-v-wr", "—");
+      setT("ana-v-bh", "—");
+      return;
+    }
+    setT("ana-v-cagr", fmtP(/** @type {number} */ (s.cagr_pct)));
+    setT("ana-v-tr", fmtP(/** @type {number} */ (s.total_return_pct)));
+    setT("ana-v-mdd", fmtP(/** @type {number} */ (s.max_drawdown_pct)));
+    setT("ana-v-sh", fmtR(/** @type {number} */ (s.sharpe)));
+    setT("ana-v-so", fmtR(/** @type {number} */ (s.sortino)));
+    setT("ana-v-pf", fmtR(/** @type {number} */ (s.profit_factor)));
+    setT("ana-v-wr", fmtP(/** @type {number} */ (s.win_rate_pct)));
+    setT("ana-v-bh", fmtP(/** @type {number} */ (s.buy_hold_total_return_pct)));
+  }
+
+  function syncAnalysisPreviewNpanel() {
+    const body = /** @type {HTMLTableSectionElement | null} */ ($("ana-preview-body"));
+    if (!body) {
+      return;
+    }
+    body.replaceChildren();
+    if (selectedId !== "analysis-metrics" || !lastSeekJson) {
+      return;
+    }
+    const at = getAnalysisTelemetry(/** @type {object} */ (lastSeekJson));
+    if (!at) {
+      return;
+    }
+    const rows = at.preview;
+    const hi = at.previewPlayheadIndex;
+    for (let r = 0; r < rows.length; r++) {
+      const row = rows[r];
+      if (!row || typeof row !== "object") {
+        continue;
+      }
+      const tr = document.createElement("tr");
+      if (r === hi) {
+        tr.className = "ana-preview-hi";
+      }
+      const R = /** @type {Record<string, unknown>} */ (row);
+      const cells = [
+        R.timestamp != null ? String(R.timestamp) : "—",
+        numCell(R.price),
+        numCell(R.signal),
+        numCell(R.weight),
+        numCell(R.daily_return_pct),
+        numCell(R.cumulative_wealth),
+        numCell(R.drawdown_pct),
+      ];
+      for (const c of cells) {
+        const td = document.createElement("td");
+        td.textContent = c;
+        tr.appendChild(td);
+      }
+      body.appendChild(tr);
+    }
+    const wrap = $("ana-preview-wrap");
+    const hiTr = body.querySelector("tr.ana-preview-hi");
+    if (wrap && hiTr && typeof hiTr.scrollIntoView === "function") {
+      hiTr.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+  }
+
+  function numCell(/** @type {unknown} */ v) {
+    if (v == null || (typeof v === "number" && !Number.isFinite(v))) {
+      return "—";
+    }
+    if (typeof v === "number") {
+      if (Math.abs(v) >= 1e5 || (Math.abs(v) > 0 && Math.abs(v) < 1e-3)) {
+        return v.toExponential(2);
+      }
+      return (Math.round(v * 1e4) / 1e4).toString();
+    }
+    return String(v);
+  }
+
+  function wireAnalysisDelegation() {
+    const body = $("npanel-item-body");
+    if (!body || body.dataset.mlAnalysisDelegate === "1") {
+      return;
+    }
+    body.dataset.mlAnalysisDelegate = "1";
+    body.addEventListener("click", (e) => {
+      const t = e.target;
+      if (!(t instanceof Element)) {
+        return;
+      }
+      if (t.closest("#btn-ana-csv")) {
+        e.preventDefault();
+        void onAnalysisSaveCsv();
+      }
+    });
+  }
+
+  async function onAnalysisSaveCsv() {
+    const st = $("ana-csv-status");
+    const api = window.marketLab;
+    if (!api || typeof api.pickCsvExport !== "function" || typeof api.exportAnalysisCsv !== "function") {
+      if (st) {
+        st.textContent = "Save dialog / export not available (preload).";
+      }
+      return;
+    }
+    if (st) {
+      st.textContent = "…";
+    }
+    let path = "";
+    try {
+      const r = await api.pickCsvExport();
+      if (r.canceled || !r.path) {
+        if (st) {
+          st.textContent = "";
+        }
+        return;
+      }
+      path = r.path;
+      const line = await api.exportAnalysisCsv(path);
+      if (typeof line === "string" && line.indexOf("OK ") === 0) {
+        if (st) {
+          st.textContent = "Wrote: " + path;
+        }
+      } else {
+        if (st) {
+          st.textContent = "Export failed: " + (line && line.length < 160 ? line : "ERR");
+        }
+      }
+    } catch (e) {
+      if (st) {
+        st.textContent = "Error: " + (e && typeof /** @type {Error} */ (e).message === "string" ? /** @type {Error} */ (e).message : String(e));
+      }
+    }
+  }
+
   /** @returns {PortfolioUiV1 | null} */
   function parsePortfolioForm() {
     if (!$("port-lev")) {
@@ -1086,7 +1389,8 @@
       return (
         `<h4 class="npanel-item-h">${t.title}</h4>` +
         `<p class="npanel-item-p">${t.body}</p>` +
-        `<p class="npanel-item-p mono" id="npanel-ana-pipeline"></p>` +
+        `<p class="npanel-item-p npanel-ana-pipe mono" id="npanel-ana-pipeline"></p>` +
+        ANALYSIS_NPANEL_FORM +
         `<p class="npanel-item-x">${t.extra}</p>`
       );
     }
@@ -1271,6 +1575,9 @@
     }
     if (id === "analysis-metrics") {
       syncAnalysisPipelineNpanel();
+      wireAnalysisDelegation();
+      syncAnalysisDashboardNpanel();
+      syncAnalysisPreviewNpanel();
     }
     if (id === "portfolio-mix") {
       applyPortfolioFormFromStorage();
@@ -1460,6 +1767,8 @@
     }
     if (selectedId === "analysis-metrics") {
       syncAnalysisPipelineNpanel();
+      syncAnalysisDashboardNpanel();
+      syncAnalysisPreviewNpanel();
     }
     if (selectedId === "portfolio-mix") {
       syncPortfolioStatsNpanel();

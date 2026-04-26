@@ -199,6 +199,9 @@ ipcMain.handle("mlab-set-uber", async (_e, /** @type {string} */ json) =>
 ipcMain.handle("mlab-set-portfolio", async (_e, /** @type {string} */ json) =>
   sendLine(`SET_PORTFOLIO ${json}`)
 );
+ipcMain.handle("mlab-export-csv", async (_e, /** @type {string} */ filePath) =>
+  sendLine(`EXPORT_CSV ${JSON.stringify({ path: filePath })}`)
+);
 ipcMain.handle("mlab-pick-csv", async () => {
   const win =
     mainWindow && !mainWindow.isDestroyed()
@@ -213,4 +216,19 @@ ipcMain.handle("mlab-pick-csv", async () => {
     return { canceled: true };
   }
   return { canceled: false, path: r.filePaths[0] };
+});
+ipcMain.handle("mlab-pick-csv-export", async () => {
+  const win =
+    mainWindow && !mainWindow.isDestroyed()
+      ? mainWindow
+      : BrowserWindow.getFocusedWindow();
+  const r = await dialog.showSaveDialog(win != null ? win : null, {
+    title: "Export analysis CSV",
+    defaultPath: "marketlab_analysis.csv",
+    filters: [{ name: "CSV", extensions: ["csv"] }]
+  });
+  if (r.canceled || !r.filePath) {
+    return { canceled: true };
+  }
+  return { canceled: false, path: r.filePath };
 });

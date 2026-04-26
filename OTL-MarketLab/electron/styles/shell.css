@@ -881,3 +881,113 @@ kbd {
   line-height: 1.35;
   color: #5a5a4a;
 }
+
+/* Analysis node (ANLY) */
+.npanel-ana-pipe {
+  font-size: 9px;
+  line-height: 1.35;
+  color: #8a7a8a;
+  max-height: 4.5em;
+  overflow: hidden;
+}
+.ana-npanel {
+  margin: 0.4rem 0 0.25rem;
+  padding: 0.35rem 0.4rem 0.5rem;
+  background: #161018;
+  border: 1px solid #2a1c28;
+  border-radius: 4px;
+  font-size: 10px;
+}
+.ana-strip-hdr {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #9a7a9a;
+  margin-bottom: 0.3rem;
+}
+.ana-strip-hdr.ana-mt {
+  margin-top: 0.5rem;
+}
+.ana-sig {
+  font-size: 9px;
+  color: #7a6a7a;
+  margin: 0 0 0.35rem;
+  word-break: break-all;
+}
+.ana-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10px;
+  font-family: "JetBrains Mono", ui-monospace, Consolas, monospace;
+}
+.ana-table th,
+.ana-table td {
+  border-bottom: 1px solid #2a2030;
+  padding: 0.15rem 0.2rem 0.15rem 0;
+  text-align: left;
+}
+.ana-table th:last-child,
+.ana-table td:last-child {
+  text-align: right;
+  color: #d8b0d0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.ana-preview-wrap {
+  max-height: 9rem;
+  overflow: auto;
+  border: 1px solid #2a2035;
+  border-radius: 3px;
+  background: #0d0a10;
+}
+.ana-preview-tbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 8px;
+  font-family: "JetBrains Mono", ui-monospace, Consolas, monospace;
+}
+.ana-preview-tbl th,
+.ana-preview-tbl td {
+  border-bottom: 1px solid #1e1820;
+  padding: 0.1rem 0.2rem;
+  text-align: right;
+  white-space: nowrap;
+}
+.ana-preview-tbl th:first-child,
+.ana-preview-tbl td:first-child {
+  text-align: left;
+  max-width: 5.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ana-preview-tbl tr.ana-preview-hi {
+  background: #3a2048;
+  outline: 1px solid #ba86c8;
+}
+.ana-csv-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  margin-top: 0.4rem;
+}
+.ana-npanel .btn-ana-csv {
+  background: #2a2038;
+  border: 1px solid #6a4a7a;
+  color: #e8d0f0;
+  font-size: 10px;
+  padding: 0.25rem 0.5rem;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.ana-npanel .btn-ana-csv:hover {
+  background: #3a3050;
+}
+.ana-csv-st {
+  margin: 0;
+  font-size: 8px;
+  color: #7a7a6a;
+  word-break: break-all;
+  max-width: 100%;
+}

@@ -7,5 +7,8 @@ contextBridge.exposeInMainWorld("marketLab", {
   setUberSignal: (/** @type {string} */ json) => ipcRenderer.invoke("mlab-set-uber", json),
   setPortfolioConfig: (/** @type {string} */ json) =>
     ipcRenderer.invoke("mlab-set-portfolio", json),
-  pickCsv: () => ipcRenderer.invoke("mlab-pick-csv")
+  /** @param {string} filePath */
+  exportAnalysisCsv: (filePath) => ipcRenderer.invoke("mlab-export-csv", filePath),
+  pickCsv: () => ipcRenderer.invoke("mlab-pick-csv"),
+  pickCsvExport: () => ipcRenderer.invoke("mlab-pick-csv-export")
 });

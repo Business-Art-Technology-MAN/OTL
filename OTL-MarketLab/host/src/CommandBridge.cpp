@@ -193,6 +193,36 @@ int run_command_bridge(mlab::host::HostState& state, std::string& out_error) {
         jerr["error"] = e.empty() ? "set_portfolio failed" : e;
         send_msg(hPipe, std::string("ERR ") + jerr.dump());
       }
+    } else if (starts_with(line, "EXPORT_CSV ")) {
+      std::string rest = line.substr(11);
+      trim_cmd(rest);
+      std::string   path;
+      nlohmann::json jin;
+      try {
+        jin = nlohmann::json::parse(rest);
+        if (jin.is_object() && jin.contains("path") && jin["path"].is_string()) {
+          path = jin["path"].get<std::string>();
+        }
+      } catch (...) {
+        path = rest;
+      }
+      if (path.empty()) {
+        send_msg(hPipe, R"raw(ERR {"ok":false,"error":"export: missing path"})raw");
+        continue;
+      }
+      std::string e;
+      if (state.export_analysis_csv(path, e)) {
+        nlohmann::json j;
+        j["ok"]         = true;
+        j["export_csv"] = true;
+        j["path"]       = path;
+        send_msg(hPipe, std::string("OK ") + j.dump());
+      } else {
+        nlohmann::json jerr;
+        jerr["ok"]    = false;
+        jerr["error"] = e.empty() ? "export_csv failed" : e;
+        send_msg(hPipe, std::string("ERR ") + jerr.dump());
+      }
     } else if (line.empty()) {
       continue;
     } else {
@@ -288,6 +318,36 @@ int run_command_bridge(mlab::host::HostState& state, std::string& out_error) {
         nlohmann::json jerr;
         jerr["ok"]    = false;
         jerr["error"] = e.empty() ? "set_portfolio failed" : e;
+        send_msg_fd(cfd, std::string("ERR ") + jerr.dump());
+      }
+    } else if (starts_with(line, "EXPORT_CSV ")) {
+      std::string rest = line.substr(11);
+      trim_cmd(rest);
+      std::string   path;
+      nlohmann::json jin;
+      try {
+        jin = nlohmann::json::parse(rest);
+        if (jin.is_object() && jin.contains("path") && jin["path"].is_string()) {
+          path = jin["path"].get<std::string>();
+        }
+      } catch (...) {
+        path = rest;
+      }
+      if (path.empty()) {
+        send_msg_fd(cfd, R"raw(ERR {"ok":false,"error":"export: missing path"})raw");
+        continue;
+      }
+      std::string e;
+      if (state.export_analysis_csv(path, e)) {
+        nlohmann::json j;
+        j["ok"]         = true;
+        j["export_csv"] = true;
+        j["path"]       = path;
+        send_msg_fd(cfd, std::string("OK ") + j.dump());
+      } else {
+        nlohmann::json jerr;
+        jerr["ok"]    = false;
+        jerr["error"] = e.empty() ? "export_csv failed" : e;
         send_msg_fd(cfd, std::string("ERR ") + jerr.dump());
       }
     } else if (line.empty()) {
