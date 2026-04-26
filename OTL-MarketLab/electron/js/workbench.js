@@ -25,6 +25,8 @@
   let analysisBuyHoldLineSeries = null;
   let backdropResizeObserver = null;
   const PORTFOLIO_UI_KEY = "mlabPortfolioUiV1";
+  /** `localStorage` for Uber N-panel OSL shader directory (path sent as `lab.osl_shader_dir`). */
+  const MLAB_OSL_SHADER_DIR_KEY = "mlab.osl_shader_dir";
 
   function getLC() {
     return window.LightweightCharts;
@@ -709,6 +711,10 @@
       <option value="m_bbw_20">m_bbw (width)</option>
     </select>
   </div>
+  <div class="uber-row uber-row-osl" title="Host looks for m1_alpha.oso here; overrides OTL_SHADER_DIR when non-empty">
+    <label class="uber-lab" for="uber-osl-shader-dir">OSL dir (M1)</label>
+    <input type="text" class="uber-inp-text" id="uber-osl-shader-dir" spellcheck="false" placeholder="(optional) folder with m1_alpha.oso" />
+  </div>
   <div class="uber-row uber-row-apply">
     <button type="button" class="btn-uber" id="uber-apply" title="Sends JSON to host: SET_UBER_SIGNAL">Apply to host</button>
   </div>
@@ -924,9 +930,16 @@
         .join(", ");
     }
 
+    const oslIn = /** @type {HTMLInputElement} */ (uberGet("uber-osl-shader-dir"));
+    const oslRaw = oslIn && typeof oslIn.value === "string" ? oslIn.value.trim() : "";
+    /** @type {Record<string, string>} */
+    const lab = { primary_overlay: primary };
+    if (oslRaw) {
+      lab.osl_shader_dir = oslRaw;
+    }
     return {
       version: 1,
-      lab: { primary_overlay: primary },
+      lab,
       source: { m_attr: "m_close" },
       shader: { m_attrs: shaderAttrs },
       indicators: ind,
@@ -955,6 +968,17 @@
             st.textContent = "Host rejected plan: " + line.slice(0, 120);
           }
           return;
+        }
+        try {
+          const lab = /** @type {{ osl_shader_dir?: string } | null | undefined} */ (cfg.lab);
+          const o   = lab && typeof lab.osl_shader_dir === "string" ? lab.osl_shader_dir.trim() : "";
+          if (o) {
+            localStorage.setItem(MLAB_OSL_SHADER_DIR_KEY, o);
+          } else {
+            localStorage.removeItem(MLAB_OSL_SHADER_DIR_KEY);
+          }
+        } catch {
+          /* ignore */
         }
         const st = document.getElementById("uber-status");
         if (st) {
@@ -1572,6 +1596,21 @@
     }
     if (id === "market-data") {
       syncNpanelMarketPathFromNode();
+    }
+    if (id === "signal-otl") {
+      const osl = /** @type {HTMLInputElement} */ (uberGet("uber-osl-shader-dir"));
+      if (osl) {
+        try {
+          if (!osl.value) {
+            const s = localStorage.getItem(MLAB_OSL_SHADER_DIR_KEY);
+            if (s) {
+              osl.value = s;
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+      }
     }
     if (id === "analysis-metrics") {
       syncAnalysisPipelineNpanel();

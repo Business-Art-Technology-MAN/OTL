@@ -169,6 +169,24 @@ h2 {
   width: 100%;
   gap: 0.2rem;
 }
+.uber-row-osl {
+  width: 100%;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.2rem;
+}
+.uber-inp-text {
+  max-width: 100%;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  font: inherit;
+  padding: 0.25rem 0.4rem;
+  background: #0f1318;
+  border: 1px solid #2a3a4a;
+  color: #c5c5c5;
+  border-radius: 2px;
+}
 .uber-row-apply {
   width: 100%;
 }

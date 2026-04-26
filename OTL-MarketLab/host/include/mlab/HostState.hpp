@@ -29,7 +29,10 @@ struct HostState {
   /// JSON: method (equal|strength|risk), leverage, comm_bps, slippage_bps — applied on SEEK for `telemetry.portfolio`.
   std::string              m_portfolio_config_json;
 
-  /// Optional OSL M1 (`m1_alpha.oso`); enabled when `OTL_SHADER_DIR` is set. Invalidated on `LOAD_DATA`.
+  /// Optional: `lab.osl_shader_dir` from `SET_UBER` JSON (trimmed). Empty = fall back to `OTL_SHADER_DIR`.
+  std::string                 m_osl_shader_dir_override;
+
+  /// Optional OSL M1 (`m1_alpha.oso`); search path: `m_osl_shader_dir_override` if set, else `OTL_SHADER_DIR`.
   std::unique_ptr<OslM1Shading> m_osl_m1;
   std::string                 m_osl_shader_dir_init;
 

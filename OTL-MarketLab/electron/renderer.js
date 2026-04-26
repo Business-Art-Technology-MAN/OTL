@@ -137,7 +137,7 @@ function renderTelemetryFromSeek(j) {
   const osl = t.osl_m1;
   if (osl && typeof osl === "object") {
     if (osl.enabled === false) {
-      addMetricTile("osl m1", "off (OTL_SHADER_DIR + m1_alpha.oso)", "ok");
+      addMetricTile("osl m1", "off (lab.osl_shader_dir or OTL_SHADER_DIR + m1_alpha.oso)", "ok");
     } else if (osl.executed && osl.fix_signal && typeof osl.fix_signal === "object") {
       const f = /** @type {Record<string, number>} */ (osl.fix_signal);
       const side = f.side != null ? String(f.side) : "?";

@@ -26,7 +26,7 @@ Lightweight, line-based protocol between the **Electron** front end and the **ot
 | `PING` | Liveness; response documents bridge version. |
 | `LOAD_DATA <path>` | Absolute or repo-relative path to Yahoo-style CSV (same shape as `scripts/fetch_market_data.py` / `MarketDataCsv`). Host loads universe + boots default `OtlNodeSystem` (RSI on `m_close` in V1). |
 | `SEEK <time>` | Wall-clock navigation. `<time>` can be: bar index, ISO date `YYYY-MM-DD` prefix, or a full timestamp string; host maps to a bar, updates playhead, returns telemetry JSON (close tail, `m_rsi`, bridge heartbeat). |
-| `SET_UBER_SIGNAL <json>` | Reconfigure UBER (nodes / wiring) from JSON; use a follow-up `SEEK` to refresh `node_states` and telemetry. |
+| `SET_UBER_SIGNAL <json>` | Reconfigure UBER (nodes / wiring) from JSON; use a follow-up `SEEK` to refresh `node_states` and telemetry. The top-level object may include **`lab`**, a UI-only block stripped before the host feeds `OtlNodeSystem` — e.g. **`lab.primary_overlay`** (backdrop) and optional **`lab.osl_shader_dir`** (absolute or repo-relative path to a folder containing `m1_alpha.oso`; see OSL below). |
 | `SET_PORTFOLIO <json>` | Host-side portfolio config (allocations, costs, rebalancing, etc.); on success, issue `SEEK` to refresh `telemetry.portfolio` in `seek` responses. |
 | `EXPORT_CSV <json>` | Analysis export (ANLY-CSV). JSON must include `"path"`: the absolute path to create/overwrite. Host writes `Timestamp,Price,Signal,Weight,Daily_Return,Cumulative_Wealth,Drawdown` (see `HostState::export_analysis_csv`). If JSON parse fails, the rest of the line is treated as a raw path (no spaces, or use JSON). |
 | `QUIT` | Graceful end of client session. |
@@ -50,7 +50,7 @@ OK {"event":"QUIT"}
 
 ## OSL (optional M1)
 
-If the host process has **`OTL_SHADER_DIR`** set to a folder containing **`m1_alpha.oso`**, each **`SEEK`** response’s **`telemetry.osl_m1`** may include `executed`, `init_ok`, `fix_signal` (side, quantity, price) from the **M1** OSL path (`ShadingSystem` + `MarketDelegate`, same as `OTL_Engine`). If the variable is unset or the shader is missing, `telemetry.osl_m1.enabled` is false with a short hint.
+The host resolves a shader **search path** in this order: non-empty **`lab.osl_shader_dir`** from the last `SET_UBER` JSON, else environment **`OTL_SHADER_DIR`**. The chosen directory should contain **`m1_alpha.oso`**. On each **`SEEK`**, **`telemetry.osl_m1`** may include `executed`, `init_ok`, `shader_dir`, optional **`shader_dir_source`** (`"lab"` or `"env"`), and `fix_signal` (side, quantity, price) from the M1 OSL path (`ShadingSystem` + `MarketDelegate`, same as `OTL_Engine`). If neither path is set or the shader is missing, `telemetry.osl_m1.enabled` is false with a short hint. **`LOAD_DATA`** JSON includes optional **`osl_m1_shader_path`** and **`osl_m1_shader_path_source`** echoing the same resolution.
 
 ## Versioning
 

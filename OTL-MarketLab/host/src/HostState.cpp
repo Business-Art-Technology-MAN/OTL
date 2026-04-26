@@ -60,6 +60,28 @@ static char const* kDefaultUberConfig = R"json({
   ]
 })json";
 
+/// Reads `lab.primary_overlay` and `lab.osl_shader_dir` from the full Uber document (not stripped for `OtlNodeSystem`).
+static void parse_lab_block_from_uber(
+    std::string const& full_json, std::string& out_primary_overlay, std::string& out_osl_shader_dir) {
+  out_primary_overlay.clear();
+  out_osl_shader_dir.clear();
+  try {
+    json const full = json::parse(full_json);
+    if (!full.is_object() || !full.contains("lab") || !full["lab"].is_object()) {
+      return;
+    }
+    json const& lab = full["lab"];
+    if (lab.contains("primary_overlay") && lab["primary_overlay"].is_string()) {
+      out_primary_overlay = lab["primary_overlay"].get<std::string>();
+    }
+    if (lab.contains("osl_shader_dir") && lab["osl_shader_dir"].is_string()) {
+      out_osl_shader_dir = lab["osl_shader_dir"].get<std::string>();
+      trim(out_osl_shader_dir);
+    }
+  } catch (...) {
+  }
+}
+
 static bool json_for_node_system(std::string const& full, json& out_stripped, std::string& err) {
   err.clear();
   try {
@@ -98,15 +120,7 @@ bool HostState::apply_uber_config(std::string& err) {
   if (!json_for_node_system(src, stripped, err)) {
     return false;
   }
-  m_primary_overlay.clear();
-  try {
-    json full = json::parse(src);
-    if (full.is_object() && full.contains("lab") && full["lab"].is_object() && full["lab"].contains("primary_overlay")
-        && full["lab"]["primary_overlay"].is_string()) {
-      m_primary_overlay = full["lab"]["primary_overlay"].get<std::string>();
-    }
-  } catch (...) {
-  }
+  parse_lab_block_from_uber(src, m_primary_overlay, m_osl_shader_dir_override);
 
   m_node_system = otl::OtlNodeSystem{};
   if (!m_node_system.load_from_string(stripped.dump())) {
@@ -123,8 +137,10 @@ bool HostState::set_uber_signal_json(std::string json, std::string& err) {
   trim(json);
   m_uber_config_json = std::move(json);
   if (m_bars <= 0 || m_path.empty()) {
+    std::string const src = m_uber_config_json.empty() ? std::string(kDefaultUberConfig) : m_uber_config_json;
+    parse_lab_block_from_uber(src, m_primary_overlay, m_osl_shader_dir_override);
     err.clear();
-    return true;  // applied when the next CSV loads
+    return true;  // `OtlNodeSystem` bakes on next `LOAD_DATA`
   }
   return apply_uber_config(err);
 }
@@ -157,6 +173,7 @@ bool HostState::load_data(std::string const& path, std::string& err) {
   m_path.clear();
   m_bars   = 0;
   m_portfolio_config_json.clear();
+  m_osl_shader_dir_override.clear();
   m_osl_shader_dir_init.clear();
   m_osl_m1.reset();
   m_universe = otl::OtlUniverse{};
@@ -656,15 +673,26 @@ static void append_analysis_telemetry(
 
 void HostState::append_osl_m1_telemetry(json& telem, int playhead_bar) {
   (void)playhead_bar;
-  char const* env = std::getenv("OTL_SHADER_DIR");
-  if (env == nullptr || env[0] == '\0') {
+  std::string               dir;
+  char const*               dir_src = nullptr;
+  if (!m_osl_shader_dir_override.empty()) {
+    dir     = m_osl_shader_dir_override;
+    dir_src = "lab";
+  } else {
+    char const* env = std::getenv("OTL_SHADER_DIR");
+    if (env != nullptr && env[0] != '\0') {
+      dir.assign(env);
+      dir_src = "env";
+    }
+  }
+  if (dir.empty()) {
     telem["osl_m1"] = json::object(
         {{"enabled", false},
          {"hint",
-          "Set OTL_SHADER_DIR to a directory containing m1_alpha.oso (same M1 sample as OTL_Engine / OTL-Core)."}});
+          "Set lab.osl_shader_dir in SET_UBER JSON, or environment OTL_SHADER_DIR, to a directory containing "
+          "m1_alpha.oso (same M1 sample as OTL_Engine / OTL-Core)."}});
     return;
   }
-  std::string const dir(env);
   if (!m_osl_m1) {
     m_osl_m1 = std::make_unique<OslM1Shading>();
   }
@@ -672,8 +700,14 @@ void HostState::append_osl_m1_telemetry(json& telem, int playhead_bar) {
     m_osl_m1->clear();
     std::string ie;
     if (!m_osl_m1->try_init(dir, ie)) {
-      telem["osl_m1"] =
-          json::object({{"enabled", true}, {"init_ok", false}, {"shader_dir", dir}, {"error", ie}});
+      json fail = {{"enabled", true},
+                   {"init_ok", false},
+                   {"shader_dir", dir},
+                   {"error", ie}};
+      if (dir_src) {
+        fail["shader_dir_source"] = dir_src;
+      }
+      telem["osl_m1"] = std::move(fail);
       m_osl_shader_dir_init.clear();
       return;
     }
@@ -685,14 +719,21 @@ void HostState::append_osl_m1_telemetry(json& telem, int playhead_bar) {
     oj["enabled"]    = true;
     oj["init_ok"]    = true;
     oj["shader_dir"] = dir;
+    if (dir_src) {
+      oj["shader_dir_source"] = dir_src;
+    }
     telem["osl_m1"]  = std::move(oj);
   } else {
-    telem["osl_m1"]  = json::object({{"enabled", true},
-                                    {"init_ok", true},
-                                    {"shader_dir", dir},
-                                    {"executed", false},
-                                    {"error", ee},
-                                    {"detail", oj}});
+    json fail        = {{"enabled", true},
+                 {"init_ok", true},
+                 {"shader_dir", dir},
+                 {"executed", false},
+                 {"error", ee},
+                 {"detail", oj}};
+    if (dir_src) {
+      fail["shader_dir_source"] = dir_src;
+    }
+    telem["osl_m1"] = std::move(fail);
   }
 }
 
@@ -882,6 +923,21 @@ std::string HostState::load_data_json() {
       {{"host", "ok"},
        {"vector_ta", "linked"},
        {"cxx", "ok"}});
+  {
+    if (!m_osl_shader_dir_override.empty()) {
+      j["osl_m1_shader_path"]         = m_osl_shader_dir_override;
+      j["osl_m1_shader_path_source"]    = "lab";
+    } else {
+      char const* e = std::getenv("OTL_SHADER_DIR");
+      if (e != nullptr && e[0] != '\0') {
+        j["osl_m1_shader_path"]      = e;
+        j["osl_m1_shader_path_source"] = "env";
+      } else {
+        j["osl_m1_shader_path"]         = nullptr;
+        j["osl_m1_shader_path_source"]  = nullptr;
+      }
+    }
+  }
   try {
     j["uber_config_effective"] =
         m_uber_config_json.empty() ? json::parse(kDefaultUberConfig) : json::parse(m_uber_config_json);

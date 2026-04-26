@@ -45,7 +45,7 @@ This document **addresses the architectural gaps** between the current Market La
 
 **Gap:** **Uber** bakes **hard-coded** indicators via `OtlNodeSystem` + VectorTA. **Custom `.osl` / `.oso`** is not yet driven from the **node graph** or **Command Bridge** (UI path to `.oso` is still future work).
 
-**Milestone (done):** `otl_marketlab_host` runs the same **M1** path as `OTL_Engine` when **`OTL_SHADER_DIR`** points at a directory containing **`m1_alpha.oso`**: `mlab::OslM1Shading` (see `OTL-MarketLab/host/src/OslM1Shading.cpp`) builds the group `otl_m1_marketlab` / layer `m1_alpha`, executes per **`SEEK`**, and appends **`telemetry.osl_m1`** (`executed`, optional **`fix_signal`** {side, quantity, price}, or error text). Source shader: `OTL-Core/shaders/m1_alpha.osl` (compile with `oslc` to `.oso` and place on `searchpath:shader`).
+**Milestone (done):** `otl_marketlab_host` runs the same **M1** path as `OTL_Engine` when the shader search path is set: **`lab.osl_shader_dir`** in `SET_UBER` JSON (takes precedence) or environment **`OTL_SHADER_DIR`**, pointing at a directory containing **`m1_alpha.oso`**. `mlab::OslM1Shading` (see `OTL-MarketLab/host/src/OslM1Shading.cpp`) builds the group `otl_m1_marketlab` / layer `m1_alpha`, executes per **`SEEK`**, and appends **`telemetry.osl_m1`** (`executed`, optional **`fix_signal`** {side, quantity, price}, or error text). Source shader: `OTL-Core/shaders/m1_alpha.osl` (compile with `oslc` to `.oso` and place on `searchpath:shader`).
 
 **What already exists (suite-wide)**
 
@@ -55,7 +55,7 @@ This document **addresses the architectural gaps** between the current Market La
 **What the host needs**
 
 1. **Process lifetime:** one **`ShadingSystem`** + **`MarketDelegate`** (or minimal renderer) + optional `TextureSystem`, matching how `OTL-Core` does it, but **tolerate missing OSL** (same as M1: skip if no shader path).
-2. **Bridge / Uber JSON** extension: e.g. `{"... existing uber ...", "osl": {"path": "C:/.../strat.oso", "group": "..."}}` — **not** a second parallel protocol until specified; can be a **v2** Uber schema.
+2. **Bridge / Uber JSON** extension: **`lab.osl_shader_dir`** (done for M1 search path) can grow toward richer `osl: { path, group, ... }` for arbitrary shaders — **v2** schema when that lands.
 3. **Per bar:** for each asset (when multi-asset is wired), set **ShaderGlobals** + **`OtlRenderState`**, `execute`, then read **output** (e.g. `fix_signal` / Ci) into **proposal weights** before GAL.
 4. **Security:** shader path must be **user-controlled and validated** (absolute path, optional allowlist); document that **MVP** = local dev only.
 
