@@ -1,11 +1,15 @@
 #pragma once
 
+#include "mlab/OslM1Shading.hpp"
 #include "otl/OtlNodeSystem.hpp"
 #include "otl/OtlUniverse.hpp"
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
+
+#include <nlohmann/json.hpp>
 
 namespace mlab::host {
 
@@ -24,6 +28,12 @@ struct HostState {
   std::string              m_primary_overlay;
   /// JSON: method (equal|strength|risk), leverage, comm_bps, slippage_bps — applied on SEEK for `telemetry.portfolio`.
   std::string              m_portfolio_config_json;
+
+  /// Optional OSL M1 (`m1_alpha.oso`); enabled when `OTL_SHADER_DIR` is set. Invalidated on `LOAD_DATA`.
+  std::unique_ptr<OslM1Shading> m_osl_m1;
+  std::string                 m_osl_shader_dir_init;
+
+  void append_osl_m1_telemetry(nlohmann::json& telem, int playhead_bar);
 
   /// Load `OTL_Data/.../universe_close_matrix.csv` style; fills bar labels and `m_close0`.
   bool load_data(std::string const& path, std::string& err);

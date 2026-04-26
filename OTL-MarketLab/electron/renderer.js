@@ -134,6 +134,23 @@ function renderTelemetryFromSeek(j) {
     addMetricTile("close tail (6)", s, "ok");
   }
 
+  const osl = t.osl_m1;
+  if (osl && typeof osl === "object") {
+    if (osl.enabled === false) {
+      addMetricTile("osl m1", "off (OTL_SHADER_DIR + m1_alpha.oso)", "ok");
+    } else if (osl.executed && osl.fix_signal && typeof osl.fix_signal === "object") {
+      const f = /** @type {Record<string, number>} */ (osl.fix_signal);
+      const side = f.side != null ? String(f.side) : "?";
+      const qty = f.quantity != null ? formatNum(/** @type {number} */ (f.quantity)) : "?";
+      const pr = f.price != null ? formatNum(/** @type {number} */ (f.price)) : "?";
+      addMetricTile("osl fix_signal", "side " + side + " qty " + qty + " @ " + pr, "ok");
+    } else if (osl.error) {
+      addMetricTile("osl m1", String(osl.error).length > 100 ? String(osl.error).slice(0, 97) + "…" : String(osl.error), "warn");
+    } else {
+      addMetricTile("osl m1", "ok", "ok");
+    }
+  }
+
   const hb = j.bridge_heartbeat;
   const hbEl = $("heartbeat");
   if (hbEl) {

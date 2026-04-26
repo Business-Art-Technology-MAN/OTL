@@ -25,8 +25,10 @@ So: **Market Lab is an optional “cap”** on the stack. The core can be built,
 ## Run (dev)
 
 1. Build `otl_marketlab_host` from the suite (e.g. `OTL_BUILD_MARKET_LAB=ON`) and start it so the bridge server is listening.
-2. In `electron/`, run `npm install` if needed, then `npm start`. The UI connects to the same bridge path as the host (see `bridgeConfig.cjs` and `docs/Command_Bridge.md`).
+2. (Optional) **OSL M1:** set **`OTL_SHADER_DIR`** to a folder containing **`m1_alpha.oso`** (compile `OTL-Core/shaders/m1_alpha.osl` with `oslc`) so each **`SEEK` returns `telemetry.osl_m1`** (see `docs/Command_Bridge.md` and `docs/STRATEGY_READINESS_ROADMAP.md`).
+3. In `electron/`, run `npm install` if needed, then `npm start`. The UI connects to the same bridge path as the host (see `bridgeConfig.cjs` and `docs/Command_Bridge.md`).
 
 ## Status
 
 - **Electron** shell: `electron/` (NASA telemetry stub, DCC graph placeholder, Canvas timeline placeholder) wired to `PING` / `LOAD_DATA` / `SEEK` via the bridge. **SRD V2.5** is the current contract.
+- **Strategy-readiness (GAL, OSL, multi-asset, execution):** the gap analysis and **phased roadmap** is in **`docs/STRATEGY_READINESS_ROADMAP.md`**. **OSL M1** (`ShadingSystem` + `m1_alpha.oso` when `OTL_SHADER_DIR` is set) is wired in the host; **closed-loop GAL** and **Uber JSON → custom `.oso` path** are still future work; that document is the working backlog.

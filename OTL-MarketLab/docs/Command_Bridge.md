@@ -48,6 +48,10 @@ OK {"event":"QUIT"}
 
 `load_data_json` / `seek_json` include `bridge_heartbeat` with `host`, `vector_ta`, and `cxx` for the NASA panel’s pre-attentive status colors.
 
+## OSL (optional M1)
+
+If the host process has **`OTL_SHADER_DIR`** set to a folder containing **`m1_alpha.oso`**, each **`SEEK`** response’s **`telemetry.osl_m1`** may include `executed`, `init_ok`, `fix_signal` (side, quantity, price) from the **M1** OSL path (`ShadingSystem` + `MarketDelegate`, same as `OTL_Engine`). If the variable is unset or the shader is missing, `telemetry.osl_m1.enabled` is false with a short hint.
+
 ## Versioning
 
 Increment the bridge string in responses when adding breaking commands. Document new verbs here.

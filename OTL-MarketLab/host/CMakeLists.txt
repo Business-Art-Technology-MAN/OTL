@@ -6,6 +6,7 @@ add_executable(
   src/main.cpp
   src/CommandBridge.cpp
   src/HostState.cpp
+  src/OslM1Shading.cpp
 )
 target_include_directories(otl_marketlab_host
   PRIVATE

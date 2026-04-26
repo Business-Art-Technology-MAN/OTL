@@ -157,6 +157,8 @@ bool HostState::load_data(std::string const& path, std::string& err) {
   m_path.clear();
   m_bars   = 0;
   m_portfolio_config_json.clear();
+  m_osl_shader_dir_init.clear();
+  m_osl_m1.reset();
   m_universe = otl::OtlUniverse{};
 
   std::ifstream f(path, std::ios::in);
@@ -195,6 +197,8 @@ bool HostState::load_data(std::string const& path, std::string& err) {
     m_bar_labels.clear();
     m_close0.clear();
     m_bars = 0;
+    m_osl_shader_dir_init.clear();
+    m_osl_m1.reset();
     return false;
   }
   m_bars  = b;
@@ -204,6 +208,8 @@ bool HostState::load_data(std::string const& path, std::string& err) {
     m_bar_labels.clear();
     m_close0.clear();
     m_bars = 0;
+    m_osl_shader_dir_init.clear();
+    m_osl_m1.reset();
     m_universe = otl::OtlUniverse{};
     return false;
   }
@@ -648,6 +654,48 @@ static void append_analysis_telemetry(
   telem["analysis"]["preview_playhead_index"]  = b - p0;
 }
 
+void HostState::append_osl_m1_telemetry(json& telem, int playhead_bar) {
+  (void)playhead_bar;
+  char const* env = std::getenv("OTL_SHADER_DIR");
+  if (env == nullptr || env[0] == '\0') {
+    telem["osl_m1"] = json::object(
+        {{"enabled", false},
+         {"hint",
+          "Set OTL_SHADER_DIR to a directory containing m1_alpha.oso (same M1 sample as OTL_Engine / OTL-Core)."}});
+    return;
+  }
+  std::string const dir(env);
+  if (!m_osl_m1) {
+    m_osl_m1 = std::make_unique<OslM1Shading>();
+  }
+  if (m_osl_shader_dir_init != dir || !m_osl_m1->is_ready()) {
+    m_osl_m1->clear();
+    std::string ie;
+    if (!m_osl_m1->try_init(dir, ie)) {
+      telem["osl_m1"] =
+          json::object({{"enabled", true}, {"init_ok", false}, {"shader_dir", dir}, {"error", ie}});
+      m_osl_shader_dir_init.clear();
+      return;
+    }
+    m_osl_shader_dir_init = dir;
+  }
+  std::string ee;
+  json         oj;
+  if (m_osl_m1->execute(m_universe, 0, oj, ee)) {
+    oj["enabled"]    = true;
+    oj["init_ok"]    = true;
+    oj["shader_dir"] = dir;
+    telem["osl_m1"]  = std::move(oj);
+  } else {
+    telem["osl_m1"]  = json::object({{"enabled", true},
+                                    {"init_ok", true},
+                                    {"shader_dir", dir},
+                                    {"executed", false},
+                                    {"error", ee},
+                                    {"detail", oj}});
+  }
+}
+
 static void fill_node_states(otl::OtlUniverse const& u, otl::OtlNodeSystem const& ns, json& out) {
   out            = json::object();
   float     v    = 0;
@@ -738,6 +786,7 @@ std::string HostState::seek_json(std::string const& time_token) {
   append_portfolio_telemetry(telem, m_portfolio_config_json);
   append_analysis_telemetry(
       telem, b, m_close0, m_bar_labels, m_portfolio_config_json, m_universe, m_node_system);
+  append_osl_m1_telemetry(telem, b);
   j["telemetry"] = std::move(telem);
   j["bridge_heartbeat"] =
       json::object({{"host", "ok"}, {"vector_ta", "linked"}, {"cxx", "ok"}});
