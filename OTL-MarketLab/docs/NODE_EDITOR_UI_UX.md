@@ -1,5 +1,7 @@
 This **Market Lab SRD V2.5** is specifically designed to bridge the gap between your verified C++ logic and a high-performance Electron interface using the **Blender Node Editor** as the functional blueprint.
 
+**Conformance matrix** (shared with **`MarketLab_SRD.md`):** see **`docs/SRD_CONFORMANCE.md`**.
+
 ---
 
 # Market Lab: Node Editor Software Requirements Document (V1.0)

@@ -1,5 +1,7 @@
 # Market Lab SRD: Part 5 — Analysis & Persistence Nodes
 
+Implementation vs this spec (export, summaries, backdrop, N-panel layout): **`docs/SRD_CONFORMANCE.md`**. Analysis N-panel labels **win rate** as the fraction of bars with positive *strategy* daily return on the host-reconstructed equity curve (not discrete fills).
+
 ## 1. Generic Definition: The "Viewer" Node
 
 The Analysis Node is a non-destructive evaluator. It does not modify the market state or the signal logic; instead, it observes the `m_weight` and `m_close` series to derive performance statistics. In our Blender metaphor, this is the **Viewer Node** that drives the Backdrop and the **Composite Output** node that saves the final "render" (data).

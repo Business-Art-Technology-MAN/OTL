@@ -4,11 +4,11 @@ This document **addresses the architectural gaps** between the current Market La
 
 | Gap | Priority | Rough complexity | Status in tree today |
 |-----|----------|------------------|------------------------|
-| OSL in host (ShadingSystem + `MarketDelegate`) | High | Medium–High | **Proven in `OTL-Core/main.cpp`**, not in `HostState` |
-| GAL bar loop (`begin_bar` / `commit_post_gal`) | High | High | **Proven in `OTL-Sandbox/main.cpp` (M2)**, not in `HostState` |
-| Multi-asset in bridge / UI (N &gt; 1) | Medium | Medium | `load_universe_close_matrix` + `OtlUniverse` support **N**; **host and UI** still **single-asset (asset 0)** for bake + PORT-CALC |
+| OSL in host (ShadingSystem + `MarketDelegate`) | High | Medium–High | **Done**: `OslM1Shading` + `lab.osl_shader_dir` / `OTL_SHADER_DIR` + `telemetry.osl_m1`. **`gal_m1` replay:** `execute(..., asset_id=a)` **per bar per asset** when **N&gt;1** (`HostState.cpp`); SEEK **`osl_m1`** exposes **`per_asset`** plus compat **`fix_signal`** (asset 0). Arbitrary shaders / graph-driven `.oso` — still future. |
+| GAL bar loop (`begin_bar` / `commit_post_gal`) | High | High | **In host**: `SET_PORTFOLIO` with **`integrator`:** **`gal_m1`** → `run_gal_m1_replay`, **`equity_tail_gal`**, **`execution_clock`**, SEEK **`telemetry.portfolio`** includes **`current_weights`** / **`osl_prev_weight`** when replay succeeds · **Sandbox** remains M2 reference (`docs/EXECUTION_CLOCK.md`). |
+| Multi-asset in bridge / UI (N &gt; 1) | Medium | Medium | **Host + UI (v1)**: **`m_asset_closes`**, bake all, SEEK **`node_states_by_asset`**, **`asset_labels`**, **`per_asset_telemetry`**, **`analysis_asset_index`** for analysis/portfolio column choice. **`close_proxy`** **`telemetry.portfolio`**: aligned tails + **`simulate_portfolio_equity_on_closes_multi`** (EW / risk / strength) when **N&gt;1** (`stats.close_proxy_multi_asset`) · **Covariance-matrix / richer joint rules** beyond proxy math — **open**. |
 | Temporal / limit-order / T vs T+1 fill | Lower until core loop is closed | High | **Daily bar** CSV + **close-to-close** style math only; no limit-order book |
-| Trade log in Analysis N-panel | Low | Low | **Preview/CSV** exist; not a per-trade **audit** API yet |
+| Weight / audit log (telemetry + timeline) | Medium | Low–Medium | **Host**: **`telemetry.analysis.trades`** (`bar`, **`gross_turnover_l1`**, **`delta_w[]`**) on **`gal_m1`** SEEK (FIFO-capped buffer; aligned with **`m_gal_m1_trades_cache`** / replay modes). **Electron**: footer timeline **Replay log** spreadsheet. **Dedicated N-panel blotter** vs **classic entry–exit blotter** — optional / partial. |
 
 ---
 
@@ -23,8 +23,9 @@ This document **addresses the architectural gaps** between the current Market La
 
 **What the Market Lab host does today**
 
-- `set_playhead` + `apply_to_asset(m_universe, 0, m_close0)`: bakes **VectorTA** for **one** asset.
-- Portfolio / analysis **equity** paths use a **synthetic** integrator on the **first asset’s** close series, not `commit_post_gal`.
+- `set_playhead` runs `apply_to_asset` for **each loaded asset** using **`m_asset_closes`** (same `OtlNodeSystem` on every asset’s `m_close` series).
+- `SET_PORTFOLIO` **`integrator: close_proxy`**: **`append_portfolio_telemetry`** uses **`close_tail`** aligned per asset when **N&gt;1** (**`simulate_portfolio_equity_on_closes_multi`**); **Analysis** summary / preview still keyed by **`analysis_asset_index`** plus buy-hold / wealth tails.
+- `SET_PORTFOLIO` **`integrator: gal_m1`**: **OSL M1** (**per-asset** `execute` when **N&gt;1**; single execute on asset 0 when **N==1**) + `rebalance_m2` / one-asset blend + **`commit_post_gal`**, with **`equity_tail_gal`** = ∑_a w_{a,t-1}·r_{a,t} and **`analysis.trades`** weight events (see `EXECUTION_CLOCK.md`).
 
 **Target design (incremental)**
 
@@ -35,7 +36,7 @@ This document **addresses the architectural gaps** between the current Market La
    - Apply **frictions** using **prev vs proposed** (needs portfolio state).
    - **`commit_post_gal(w)`** with the **post-friction** weights.
 2. **SET_PORTFOLIO** should evolve from “static JSON of friction knobs” to “**config for the integrator**” (leverage limits, max turnover, cash leg, or a flag for **proxy** vs **GAL**), without breaking the existing JSON: prefer **versioned** fields, e.g. `{"version":2,"integrator":"gal_proxy",...}`.
-3. **SEEK** telemetry should surface **`osl_prev_weight` / `current_portfolio()`** (even if scalars) when the closed loop is active so the **Analysis** and **CSV** can show **book state**, not just price-derived curves.
+3. **SEEK** telemetry surfaces **`osl_prev_weight`** / **`current_portfolio()`** (**`telemetry.portfolio`**) when **`gal_m1`** replay succeeds; **Analysis CSV** / export can consume those fields where wired.
 
 **Dependencies:** (2) and (3) are easier if **weights are N-asset** (see section 3).
 
@@ -43,9 +44,9 @@ This document **addresses the architectural gaps** between the current Market La
 
 ## 2. OSL runtime — `ShadingSystem` + `MarketDelegate`
 
-**Gap:** **Uber** bakes **hard-coded** indicators via `OtlNodeSystem` + VectorTA. **Custom `.osl` / `.oso`** is not yet driven from the **node graph** or **Command Bridge** (UI path to `.oso` is still future work).
+**Gap:** **Uber** bakes **hard-coded** indicators via `OtlNodeSystem` + VectorTA. **Custom `.osl` / `.oso`** is not yet driven from the **node graph** or **Command Bridge** (UI path to arbitrary shaders is still future work).
 
-**Milestone (done):** `otl_marketlab_host` runs the same **M1** path as `OTL_Engine` when the shader search path is set: **`lab.osl_shader_dir`** in `SET_UBER` JSON (takes precedence) or environment **`OTL_SHADER_DIR`**, pointing at a directory containing **`m1_alpha.oso`**. `mlab::OslM1Shading` (see `OTL-MarketLab/host/src/OslM1Shading.cpp`) builds the group `otl_m1_marketlab` / layer `m1_alpha`, executes per **`SEEK`**, and appends **`telemetry.osl_m1`** (`executed`, optional **`fix_signal`** {side, quantity, price}, or error text). Source shader: `OTL-Core/shaders/m1_alpha.osl` (compile with `oslc` to `.oso` and place on `searchpath:shader`).
+**Milestone (host, `gal_m1`):** **`otl_marketlab_host`** runs the same **M1** path as `OTL_Engine` when the shader path (**`lab.osl_shader_dir`**, then **`OTL_SHADER_DIR`**) contains **`m1_alpha.oso`**. When **`integrator`** is **`gal_m1`** and **N &gt; 1**, `run_gal_m1_replay` calls **`OslM1Shading::execute(u, a, …)`** once per asset per bar and builds intent from each JSON (**`osl_m1_intent_from_per_asset_json`**); **N == 1** uses a single **`execute(..., 0)`** as before. **Telemetry** at the playhead merges **`per_asset`** payloads with backward-compatible top-level **`fix_signal`**.
 
 **What already exists (suite-wide)**
 
@@ -56,28 +57,27 @@ This document **addresses the architectural gaps** between the current Market La
 
 1. **Process lifetime:** one **`ShadingSystem`** + **`MarketDelegate`** (or minimal renderer) + optional `TextureSystem`, matching how `OTL-Core` does it, but **tolerate missing OSL** (same as M1: skip if no shader path).
 2. **Bridge / Uber JSON** extension: **`lab.osl_shader_dir`** (done for M1 search path) can grow toward richer `osl: { path, group, ... }` for arbitrary shaders — **v2** schema when that lands.
-3. **Per bar:** for each asset (when multi-asset is wired), set **ShaderGlobals** + **`OtlRenderState`**, `execute`, then read **output** (e.g. `fix_signal` / Ci) into **proposal weights** before GAL.
+3. **Per-asset M1 in `gal_m1` (done for same shader on all assets):** **`OtlRenderState::asset_id`** set per **`execute`**. **Multiple distinct `.oso`** layers or graph-selected shaders — **future**.
 4. **Security:** shader path must be **user-controlled and validated** (absolute path, optional allowlist); document that **MVP** = local dev only.
 
-**Suggested order:** wire **one** OSL **execute** in `seek` or a **dedicated** “dry run” bar step **after** `apply_to_asset`, **before** GAL, with **one** asset, then scale to N.
+**Suggested order (remaining):** richer **`osl: { path, group, … }`** in Uber JSON; optional **per-asset shader map** if designs require different **`.oso`** per symbol.
 
 ---
 
 ## 3. Multi-asset “universe” topology
 
-**Gap:** **Telemetry and PORT-CALC** are centered on **asset 0** with **`m_close0`**; cross-asset covariance / joint allocation is not exposed.
+**Gap (narrowing):** **Cross-asset covariance** and a **single joint optimizer** in **PORT-CALC / UI** remain **not** wired; **close_proxy** **portfolio** tails are **multi-asset synthetic** (EW/risk/strength heuristic in **`simulate_portfolio_equity_on_closes_multi`**). **Analysis** summary / preview remains **per `analysis_asset_index`** for primary curves. **GAL+`gal_m1` wealth** and **VectorTA** use **N** when the matrix has N columns.
 
 **What already exists**
 
-- **`load_universe_close_matrix`** fills **`OtlUniverse`** with **multiple** assets; **`load_data_json`** already reports `assets` count.
-- **Single-asset** bake: `m_node_system.apply_to_asset(m_universe, 0, m_close0)`.
+- **`load_universe_close_matrix`** fills **`OtlUniverse`**; **`load_data_json`** reports **`assets`**. The host keeps **`m_asset_closes`**, bakes **all** assets on **`set_playhead`**, and **`SEEK`** returns **`node_states_by_asset`**, **`node_states`**, and **`node_states_primary`** (0).
 
-**Target design**
+**Target design (remaining)**
 
-1. **Host:** loop **`a` in `0..asset_count-1`**, with either per-asset `apply_to_asset` or batch rules (performance profiling required).
-2. **SEEK / telemetry:** either **per-asset** `node_states` (nested) or a **list**; avoid breaking the UI by **versioning** `seek_json` or adding **`telemetry.symbols`**, **`telemetry.by_asset`**.
-3. **Node editor:** add a **“stack”** or **group** metaphor (per SRD) so **multiple** market streams feed one **Portfolio**; that maps to **one** `OtlUniverse` with **N** assets and a **vector** of weights, not N independent PORT-CALC tails.
-4. **SET_PORTFOLIO** / GAL: joint allocation (risk parity across N, etc.) should consume **N×** series; covariance can live in `otl` or a small `HostState` helper once **N** is first-class in the sim loop.
+1. **Host (done, first cut):** loop **`a` in `0..N-1`** for **`apply_to_asset`**; performance profiling and batching remain possible (profiling TBD).
+2. **SEEK (done, first cut):** **`node_states_by_asset`**, top-level **`assets`**. **Optional follow-ups:** `telemetry.symbols` / per-**symbol** labels from CSV header.
+3. **Node editor (in progress):** **+ Frame** layout nodes (persisted, non-bridge); freeform **data** nodes / multiple pipelines — **not started**.
+4. **SET_PORTFOLIO / GAL:** **risk parity / covariance** and richer joint rules should consume **N×** series explicitly; can live in `otl` or `HostState` — **extends** today’s **proxy** + **`gal_m1`**, not a replacement for the current **multi** heuristics.
 
 ---
 
@@ -95,21 +95,24 @@ This document **addresses the architectural gaps** between the current Market La
 
 ---
 
-## 5. Event log (trade log) in Analysis
+## 5. Event log (weight / trade audit)
 
-**Gap:** Audit trail of every **entry/exit**; preview table today is **bar-aligned** rows, not a **trade blotter**.
+**Achieved (v1):** **`telemetry.analysis.trades`** on **`gal_m1`** SEEK — per replay bar **`{ bar, gross_turnover_l1, delta_w[] }`**, capped and consistent with **`run_gal_m1_replay`** cache (**`m_gal_m1_trades_cache`**). Not a classical **entry/exit blotter**; it is **weight-change / turnover** telemetry for QA and Animator-style review.
 
-**Target:** emit **`telemetry.analysis.trades`** (array of `{ t_entry, t_exit, ... }`) from the **GAL+OSL** path once exits are defined, or a **simplified** log from **weight changes** in `commit_post_gal` (delta threshold). **Low** effort compared to (1)–(3); good **fast follow** once weights are real.
+**UI:** Electron **footer timeline** (**Replay log**) renders the array as a **scrollable spreadsheet** (playhead row highlighted).
+
+**Remaining:** richer semantics **`{ t_entry, t_exit, tag, fees, … }`** when/if the execution model exposes discrete round-trips; optional **mirror** into Analysis **N-panel** beyond timeline.
 
 ---
 
-## Recommended implementation order (matches your “close OSL loop first” if read narrowly)
+## Recommended implementation order (status)
 
-1. **OSL in host (minimal):** `ShadingSystem` + `MarketDelegate` + optional `OTL_SHADER_DIR` or **path in Uber JSON**, **one** asset, **one** `execute` per `SEEK` (or per scrub bar), no GAL change yet — proves **.oso** in the same process as the bridge.
-2. **GAL loop:** port the **M2** pattern from `OTL-Sandbox` into **`HostState`** (or a dedicated `MlabBarSimulation` class), replacing the **post-hoc** equity path for **one** asset when a flag is on.
-3. **Multi-asset** bake + `seek_json` shape + UI wiring.
-4. **Execution model** (T+1, limits) and **slippage statistics**.
-5. **Trade log** in telemetry + N-panel.
+1. ~~**OSL in host (minimal):** M1, bridge shader path, `telemetry.osl_m1`~~ **Done** — **extended:** **per-asset** **`execute`** in **`gal_m1`** when **N&gt;1**.
+2. ~~**GAL + execution clock** (`gal_m1` optional integrator)~~ **Done** — **N-vector** wealth, **weights** on SEEK, **`analysis.trades`** buffer.
+3. ~~**Multi-asset bake + `seek_json` + backdrop/metrics/analysis ref column**~~ **Done (v1)** — **multi-asset `close_proxy` portfolio** (`simulate_portfolio_equity_on_closes_multi`) **done** · **covariance / joint optimizer** — **open**.
+4. **Execution model** (T+1, limits) and **slippage statistics** — **not started** (lower priority until (3) covariance / joint rules are richer).
+5. ~~**Weight-audit events** in **`telemetry.analysis.trades`** + timeline table~~ **Done (v1)** — **N-panel blotter** / **entry–exit blotter** — **optional / not started**.
+6. ~~**Performance:** `gal_m1` **`SEEK`** — incremental / same-bar cache~~ — **Done (first cut)** in `run_gal_m1_replay` (`execution_clock.gal_m1_replay_mode`).
 
 ---
 
@@ -118,14 +121,18 @@ This document **addresses the architectural gaps** between the current Market La
 | Area | File / symbol |
 |------|----------------|
 | GAL M2 loop | `OTL-Sandbox/main.cpp` (`begin_bar`, `commit_post_gal`, `rebalance_m2`, …) |
-| OSL M1 + `MarketDelegate` | `OTL-Core/main.cpp` |
+| OSL M1 + `MarketDelegate` | `OTL-Core/main.cpp` · Market Lab: `OslM1Shading.cpp` |
 | OSL ↔ universe | `OTL-Core/otl/MarketDelegate.*`, `OtlRenderState` in `OtlUniverse.hpp` |
+| Multi-asset closes / bake | `HostState::m_asset_closes`, `host_apply_node_system_to_all_assets`, `set_playhead` |
 | Uber JSON / bridge | `HostState::set_uber_signal_json`, `CommandBridge` |
-| Current PORT-CALC | `HostState.cpp` — `simulate_portfolio_equity_on_closes`, `append_portfolio_telemetry` |
+| PORT-CALC (close tail) | `HostState.cpp` — `simulate_portfolio_equity_on_closes`, **`simulate_portfolio_equity_on_closes_multi`**, **`append_portfolio_telemetry`**, `json_array_to_double_vec` / `tail_num` |
+| `gal_m1` replay + trades | `run_gal_m1_replay`, **`m_gal_m1_trades_cache`**, `osl_m1_fix_signal_scalar` / `osl_m1_intent_from_per_asset_json` |
+| GAL+OSL clock | `docs/EXECUTION_CLOCK.md`, `SET_PORTFOLIO` `integrator` |
+| Timeline **Replay log** | `electron/index.html` (`.timeline-dopesheet-*`), `electron/renderer.js` — `renderTimelineTradesSheet` |
 | Default Uber JSON | `kDefaultUberConfig` in `HostState.cpp` |
 
 ---
 
 ## Summary
 
-**Addressing** these issues in software terms means: **(a)** adopting the **existing** GAL and OSL **patterns** from `OTL-Sandbox` and `OTL-Core/main.cpp` into **` otl_marketlab_host`**, **(b)** extending **SET_UBER_SIGNAL / SET_PORTFOLIO / SEEK** contracts in **versioned** steps, and **(c)** evolving the **node editor** only after the **host** exposes **N-asset** and **stateful** data. This roadmap is the **agreed** backlog for that work; **implementation** should be **merged as separate PRs** by phase, not a single monolithic change.
+**Today:** **`otl_marketlab_host`** runs **`gal_m1`** with **per-asset OSL** when **N&gt;1**, **PORT-CALC** **`close_proxy`** can use **aligned multi-asset tails**, **SEEK** exposes **weights**, **`analysis.trades`**, and **Execution** metadata; **Electron** shows a **timeline spreadsheet** for weight deltas. **Next** major gaps: **covariance / joint allocation**, **T+1 / limits**, **optional** **N-panel** / **blotter** UX, and **node-graph**-driven OSL beyond **`m1_alpha`** for all assets.

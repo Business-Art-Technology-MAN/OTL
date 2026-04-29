@@ -24,10 +24,10 @@ Lightweight, line-based protocol between the **Electron** front end and the **ot
 | Line | Meaning |
 |------|---------|
 | `PING` | Liveness; response documents bridge version. |
-| `LOAD_DATA <path>` | Absolute or repo-relative path to Yahoo-style CSV (same shape as `scripts/fetch_market_data.py` / `MarketDataCsv`). Host loads universe + boots default `OtlNodeSystem` (RSI on `m_close` in V1). |
-| `SEEK <time>` | Wall-clock navigation. `<time>` can be: bar index, ISO date `YYYY-MM-DD` prefix, or a full timestamp string; host maps to a bar, updates playhead, returns telemetry JSON (close tail, `m_rsi`, bridge heartbeat). |
+| `LOAD_DATA <path>` | Absolute or repo-relative path to Yahoo-style CSV (same shape as `scripts/fetch_market_data.py` / `MarketDataCsv`). Host loads universe + boots default `OtlNodeSystem` (RSI on `m_close` in V1). Response JSON includes **`asset_labels`**: trimmed CSV header cells for each close column (fallback `Asset k`). Includes **`timeline_axis`**: `{ "bars": <int>, "ticks": [ { "bar": <int>, "wall": "<timestamp string from CSV>" }, … ] }` so the Electron footer can render a **dual-scale** wall-clock overview + scrub band (MarketLab_SRD §6.3). |
+| `SEEK <time>` | Wall-clock navigation. `<time>` can be: bar index, ISO date `YYYY-MM-DD` prefix, or a full timestamp string; host maps to a bar, updates playhead, returns telemetry JSON (close tail, `m_rsi`, bridge heartbeat). JSON includes **`assets`**, **`asset_labels`**, **`node_states_by_asset`**, **`node_states`** / **`node_states_primary`** (0), **`per_asset_telemetry`** (per column: **`close_tail`**, **`shadow_overlay`**, **`m_close`**), and **`execution_clock`**; see `docs/EXECUTION_CLOCK.md` for **`gal_m1`**. |
 | `SET_UBER_SIGNAL <json>` | Reconfigure UBER (nodes / wiring) from JSON; use a follow-up `SEEK` to refresh `node_states` and telemetry. The top-level object may include **`lab`**, a UI-only block stripped before the host feeds `OtlNodeSystem` — e.g. **`lab.primary_overlay`** (backdrop) and optional **`lab.osl_shader_dir`** (absolute or repo-relative path to a folder containing `m1_alpha.oso`; see OSL below). |
-| `SET_PORTFOLIO <json>` | Host-side portfolio config (allocations, costs, rebalancing, etc.); on success, issue `SEEK` to refresh `telemetry.portfolio` in `seek` responses. |
+| `SET_PORTFOLIO <json>` | Host-side portfolio config (allocations, costs, rebalancing, etc.); on success, issue `SEEK` to refresh `telemetry.portfolio` in `seek` responses. Optional **`"integrator": "close_proxy" \| "gal_m1"`** (default: `close_proxy`). Optional integer **`analysis_asset_index`** (0…N−1 when **N>1**): which asset’s **close** and **signal** series feed **`telemetry.analysis`** (wealth, buy&hold, preview) and **`EXPORT_CSV`** for **`close_proxy`** runs; defaults to **0**. **`gal_m1`** runs **`run_gal_m1_replay`** (bar **`0`**… **`SEEK` bar**) following **`execution_clock.ordered_steps`**: **`vector_ta_bake`**, **`seek_set_bar`**, **`begin_bar`**, **`osl_m1_execute`**, **`gal_commit`** — see **`docs/EXECUTION_CLOCK.md`** (**`telemetry.execution_clock`** in **`SEEK` JSON**, including **`gal_m1_replay_mode`**). |
 | `EXPORT_CSV <json>` | Analysis export (ANLY-CSV). JSON must include `"path"`: the absolute path to create/overwrite. Host writes `Timestamp,Price,Signal,Weight,Daily_Return,Cumulative_Wealth,Drawdown` (see `HostState::export_analysis_csv`). If JSON parse fails, the rest of the line is treated as a raw path (no spaces, or use JSON). |
 | `QUIT` | Graceful end of client session. |
 
@@ -37,7 +37,7 @@ Lightweight, line-based protocol between the **Electron** front end and the **ot
 PING
 OK {"event":"PING","bridge":"CommandBridge v1"}
 LOAD_DATA C:\data\project\OTL_Data\universe_close_matrix.csv
-OK {"ok":true,"path":"...","bars":100,...}
+OK {"ok":true,"path":"...","bars":100,"timeline_axis":{"bars":100,"ticks":[{"bar":0,"wall":"..."},...]},...}
 SEEK 2024-01-15
 OK {"bar":42,"node_states":{...},"telemetry":{...}}
 QUIT

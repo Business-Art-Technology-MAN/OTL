@@ -25,9 +25,20 @@
       <section class="node-workspace" aria-label="Node editor (Blender-style)">
         <div class="node-toolbar">
           <span class="node-toolbar-label">Node editor</span>
+        <div class="node-toolbar-add">
+          <label class="sr-only" for="graph-add-kind">Add pipeline node</label>
+          <select id="graph-add-kind" class="node-add-select mono" aria-label="Add typed pipeline node" title="Add another node instance (same host bridge wiring; layouts are persisted)">
+            <option value="">+ Add node…</option>
+            <option value="md">Market data (input)</option>
+            <option value="sig">Uber · VectorTA (signal)</option>
+            <option value="port">Portfolio compositor</option>
+            <option value="ana">Analysis / viewer</option>
+          </select>
+        </div>
+          <button type="button" id="btn-graph-add-frame" class="btn-ghost" title="Add a layout frame (not part of the data bridge)">+ Frame</button>
           <button type="button" id="btn-zoom-fit" class="btn-ghost" title="Reset pan / zoom">Reset view</button>
           <span class="node-toolbar-z mono" id="zoom-pct">100%</span>
-          <span class="node-toolbar-hint">Drag nodes to arrange · drag empty area to pan · wheel zooms graph only</span>
+          <span class="node-toolbar-hint" title="Typed sockets: drag green/grey/cyan plugs to compatible inputs — invalid links are rejected. Extra nodes duplicate the Blender-style shells; bridge calls stay host-global. Multi-asset = one CSV with date, close₁…closeₙ.">Drag nodes · connect sockets (typed) · + Add node copies · multi-asset = N close columns</span>
         </div>
         <div class="node-board-outer" id="node-board-outer">
           <div class="node-board-stack">
@@ -54,78 +65,35 @@
                 height="480"
                 fill="rgba(0,0,0,0.01)"
               />
-              <g id="graph-wires" pointer-events="none">
-                <path
-                  id="wire-md-sig"
-                  class="connect-wire connect-stream"
-                  fill="none"
-                  stroke-width="2.5"
-                  stroke-linecap="round"
-                  d=""
-                />
-                <path
-                  id="wire-sig-port"
-                  class="connect-wire connect-stream"
-                  fill="none"
-                  stroke-width="2.5"
-                  stroke-linecap="round"
-                  d=""
-                />
-                <path
-                  id="wire-sig-port-2"
-                  class="connect-wire connect-stream"
-                  fill="none"
-                  stroke-width="1.8"
-                  stroke-linecap="round"
-                  stroke-opacity="0.75"
-                  d=""
-                />
-                <path
-                  id="wire-sig-port-3"
-                  class="connect-wire connect-stream"
-                  fill="none"
-                  stroke-width="1.8"
-                  stroke-linecap="round"
-                  stroke-opacity="0.6"
-                  d=""
-                />
-                <path
-                  id="wire-port-ana"
-                  class="connect-wire connect-float"
-                  fill="none"
-                  stroke-width="2.5"
-                  stroke-linecap="round"
-                  d=""
-                />
-              </g>
+              <g id="graph-wires"></g>
 
-              <g class="mlab-node" data-id="market-data" data-kind="md" transform="translate(36, 140)">
+              <g class="mlab-node" data-id="market-data" data-kind="md" data-core="1" transform="translate(36, 140)">
                 <rect class="node-chrome" x="0" y="0" width="200" height="120" rx="3" />
                 <rect class="node-hdr node-hdr-md" x="0" y="0" width="200" height="26" rx="3" />
                 <text x="8" y="17" class="node-hdr-text">Yahoo / CSV · Market data</text>
                 <text x="8" y="48" class="node-body-lbl">Source</text>
-                <text x="8" y="64" class="node-body-val mono" id="node-val-md-path">(no file)</text>
+                <text x="8" y="64" class="node-body-val mono md-graph-path-sync" id="node-val-md-path">(no file)</text>
                 <text x="8" y="80" class="node-body-sock" font-size="7" fill="#6a7a8a">Load: N-Panel</text>
                 <text x="8" y="96" class="node-body-lbl">Stream</text>
                 <text x="8" y="112" class="node-body-sock mono">Data · OHLCV</text>
                 <circle class="socket socket-in" cx="0" cy="44" r="5" data-io="in" />
-                <circle class="socket socket-out socket-stream" cx="200" cy="100" r="5" data-io="out" />
+                <circle class="socket socket-out socket-stream" cx="200" cy="100" r="5" data-io="out" data-wire-k="out" data-wire-kind="stream" />
                 <text x="188" y="92" class="socket-tag mono" text-anchor="end">out</text>
               </g>
 
-              <g class="mlab-node" data-id="signal-otl" data-kind="sig" transform="translate(300, 120)">
+              <g class="mlab-node" data-id="signal-otl" data-kind="sig" data-core="1" transform="translate(300, 120)">
                 <rect class="node-chrome" x="0" y="0" width="220" height="120" rx="3" />
                 <rect class="node-hdr node-hdr-sig" x="0" y="0" width="220" height="26" rx="3" />
                 <text x="8" y="17" class="node-hdr-text">Uber · VectorTA</text>
                 <text x="8" y="44" class="node-body-lbl" font-size="9">Properties: N-Panel (select node)</text>
                 <text x="8" y="60" class="node-body-val mono" font-size="9" id="uber-out-hint">m_*</text>
                 <text x="8" y="90" class="node-body-sock mono" font-size="8">SET_UBER_SIGNAL</text>
-                <circle class="socket socket-in socket-stream" cx="0" cy="100" r="5" data-io="in" />
-                <circle class="socket socket-out socket-float" cx="220" cy="100" r="5" data-io="out" />
+                <circle class="socket socket-in socket-stream" cx="0" cy="100" r="5" data-io="in" data-wire-k="in" data-wire-kind="stream_in" />
+                <circle class="socket socket-out socket-float" cx="220" cy="100" r="5" data-io="out" data-wire-k="out" data-wire-kind="scalar_out" />
                 <text x="210" y="92" class="socket-tag mono" font-size="8" text-anchor="end">out</text>
               </g>
 
-              <g class="mlab-node" data-id="portfolio-mix" data-kind="port" transform="translate(600, 118)">
+              <g class="mlab-node" data-id="portfolio-mix" data-kind="port" data-core="1" transform="translate(600, 118)">
                 <rect class="node-chrome" x="0" y="0" width="210" height="150" rx="3" />
                 <rect class="node-hdr node-hdr-port" x="0" y="0" width="210" height="26" rx="3" />
                 <text x="8" y="17" class="node-hdr-text">Portfolio · multi-signal</text>
@@ -134,26 +102,26 @@
                 <text x="20" y="55" class="node-body-sock" font-size="7" fill="#7a7a7a">Sig 1</text>
                 <text x="20" y="77" class="node-body-sock" font-size="7" fill="#7a7a7a">Sig 2</text>
                 <text x="20" y="99" class="node-body-sock" font-size="7" fill="#7a7a7a">Sig 3</text>
-                <circle class="socket socket-in socket-float" cx="0" cy="52" r="4.5" data-io="in" data-idx="1" />
-                <circle class="socket socket-in socket-float" cx="0" cy="74" r="4.5" data-io="in" data-idx="2" />
-                <circle class="socket socket-in socket-float" cx="0" cy="96" r="4.5" data-io="in" data-idx="3" />
+                <circle class="socket socket-in socket-float" cx="0" cy="52" r="4.5" data-io="in" data-idx="1" data-wire-k="in1" data-wire-kind="scalar_in" />
+                <circle class="socket socket-in socket-float" cx="0" cy="74" r="4.5" data-io="in" data-idx="2" data-wire-k="in2" data-wire-kind="scalar_in" />
+                <circle class="socket socket-in socket-float" cx="0" cy="96" r="4.5" data-io="in" data-idx="3" data-wire-k="in3" data-wire-kind="scalar_in" />
                 <text x="8" y="120" class="node-body-sock mono" font-size="7">out (closure · purple)</text>
                 <text x="8" y="140" class="node-body-sock mono" font-size="7" fill="#6a8a6a">out (data → analysis)</text>
-                <circle class="socket socket-out" cx="210" cy="64" r="4.5" data-io="out" data-sock="closure" style="fill: #4a2a4a; stroke: #9c6a9a" />
-                <circle class="socket socket-out socket-cyan" cx="210" cy="108" r="5" data-io="out" data-sock="data" />
+                <circle class="socket socket-out" cx="210" cy="64" r="4.5" data-io="out" data-sock="closure" data-wire-k="ocl" data-wire-kind="closure_out" style="fill: #4a2a4a; stroke: #9c6a9a" />
+                <circle class="socket socket-out socket-cyan" cx="210" cy="108" r="5" data-io="out" data-sock="data" data-wire-k="odata" data-wire-kind="pipeline_data" />
                 <text x="198" y="62" class="socket-tag mono" font-size="7" text-anchor="end">cl</text>
                 <text x="198" y="100" class="socket-tag mono" font-size="8" text-anchor="end">out</text>
               </g>
 
-              <g class="mlab-node" data-id="analysis-metrics" data-kind="ana" transform="translate(860, 120)">
+              <g class="mlab-node" data-id="analysis-metrics" data-kind="ana" data-core="1" transform="translate(860, 120)">
                 <rect class="node-chrome" x="0" y="0" width="200" height="120" rx="3" />
                 <rect class="node-hdr node-hdr-ana" x="0" y="0" width="200" height="26" rx="3" />
                 <text x="8" y="17" class="node-hdr-text">Metric table</text>
                 <text x="8" y="48" class="node-body-lbl">Analysis (viewer)</text>
-                <text x="8" y="66" class="node-body-val mono">Sharpe, Sortino, CAGR</text>
-                <text x="8" y="90" class="node-body-sock mono">Fills N-Panel + backdrop</text>
-                <circle class="socket socket-in" cx="0" cy="100" r="5" data-io="in" />
-                <text x="8" y="110" class="node-body-sock" fill="#6a6a6a">(host metrics later)</text>
+                <text x="8" y="66" class="node-body-val mono">ANLY-CALC summary</text>
+                <text x="8" y="90" class="node-body-sock mono">Backdrop · log wealth vs B&amp;H</text>
+                <circle class="socket socket-in" cx="0" cy="100" r="5" data-io="in" data-wire-k="in" data-wire-kind="analysis_in" />
+                <text x="8" y="110" class="node-body-sock" fill="#6a6a6a">EXPORT_CSV preview</text>
               </g>
             </g>
           </svg>
@@ -204,17 +172,41 @@
     <footer class="mlab-timeline" aria-label="Spreadsheet and timeline (temporal)">
       <h2>Timeline (wall clock)</h2>
       <p id="timeline-status" class="timeline-status mono">Load a CSV to enable scrub</p>
-      <canvas
-        id="timeline-canvas"
-        width="1200"
-        height="100"
-        aria-label="Scrubbable time axis, drag to seek"
-        role="slider"
-        aria-valuemin="0"
-        aria-valuemax="0"
-        tabindex="0"
-      ></canvas>
-      <p class="hint timeline-hint">Drag on the band to scrub; host maps bar ↔ wall time. Use <strong>Seek</strong> in the N-Panel for explicit jumps.</p>
+      <div class="timeline-dual" aria-label="Dual-scale timeline: overview strip and scrub band">
+        <canvas
+          id="timeline-macro-canvas"
+          width="1200"
+          height="40"
+          aria-label="Macro overview of loaded range (click or drag to seek)"
+          role="slider"
+          aria-valuemin="0"
+          aria-valuemax="0"
+          tabindex="0"
+        ></canvas>
+        <canvas
+          id="timeline-canvas"
+          width="1200"
+          height="100"
+          aria-label="Scrubbable time axis, drag to seek"
+          role="slider"
+          aria-valuemin="0"
+          aria-valuemax="0"
+          tabindex="0"
+        ></canvas>
+      </div>
+      <div class="timeline-dopesheet-wrap" aria-label="GAL+M1 replay weight deltas (per bar)">
+        <div class="timeline-dopesheet-head">
+          <span class="timeline-dopesheet-title">Replay log</span>
+          <span id="timeline-trades-caption" class="timeline-dopesheet-caption mono" aria-live="polite"></span>
+        </div>
+        <div class="timeline-dopesheet-scroll">
+          <table class="timeline-dopesheet-table" id="timeline-trades-table">
+            <thead id="timeline-trades-thead"></thead>
+            <tbody id="timeline-trades-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+      <p class="hint timeline-hint">Top strip = macro overview; lower band = scrub (wall-clock labels from the host). Drag either to seek. Use <strong>Seek</strong> in the N-Panel for explicit jumps. The replay table lists cumulative weight deltas per replay bar (<code>gal_m1</code>).</p>
     </footer>
     <script src="./node_modules/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
     <script src="js/workbench.js"></script>

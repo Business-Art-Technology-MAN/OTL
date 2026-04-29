@@ -147,4 +147,8 @@ DCC node editor and parameter panel reference
 
 ---
 
+**Conformance checklist** (requirements ↔ code): **`docs/SRD_CONFORMANCE.md`** — update when changing bridge semantics, SEEK JSON contracts, or host/UI UX that traces to §§1–8 in this SRD.
+
+---
+
 **Document history:** V2.3 structural draft; **V2.4** path corrections, Option B, full MVP, CSV+wall clock, interactive graph, OTL/.otl, cross-platform, monorepo build note. **V2.5** — Electron, Command Bridge (named pipe / UDS, no gRPC V1), connection order, `LOAD_DATA` / `SEEK`, host-owned bar mapping, and **A / B / C** shell implementation priority.
